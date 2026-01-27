@@ -1,0 +1,9 @@
+{
+  "name": "GomaSecure",
+  "description": "Système de signalement sécuritaire et de vigilance communautaire pour la ville de Goma. Inclut gestion des incidents, validation par sentinelles et alertes SOS.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
