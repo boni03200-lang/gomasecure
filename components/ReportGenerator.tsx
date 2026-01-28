@@ -180,7 +180,8 @@ export const ReportGenerator: React.FC<ReportGeneratorProps> = ({
       </div>
 
       {/* --- HIDDEN PDF TEMPLATE (A4 Styled) --- */}
-      <div className="fixed top-0 left-0 z-[-100] opacity-0 pointer-events-none w-[210mm] font-serif text-gray-900">
+      {/* Changed from opacity-0 to off-screen positioning to ensure html2canvas renders it correctly */}
+      <div className="fixed top-0 left-[-10000px] z-[-100] w-[210mm] font-serif text-gray-900 pointer-events-none">
         <div id="official-report-template" className="bg-white min-h-[297mm] relative p-[15mm]">
             
             {/* Watermark */}

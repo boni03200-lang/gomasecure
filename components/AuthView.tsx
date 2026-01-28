@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User as UserIcon, ArrowRight, ShieldCheck, Loader2, Phone } from 'lucide-react';
-import { db } from '../services/supabase';
+import { db } from '../services/firebase';
 import { User } from '../types';
 
 interface AuthViewProps {

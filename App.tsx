@@ -9,7 +9,7 @@ import { AuthView } from './components/AuthView';
 import { NotificationPanel } from './components/NotificationPanel';
 import { UserProfile } from './components/UserProfile';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
-import { db } from './services/supabase';
+import { db } from './services/firebase';
 import { User, Incident, TabView, UserRole, IncidentType, IncidentStatus, Notification } from './types';
 import { GOMA_CENTER, SOS_MESSAGE_TEMPLATE } from './constants';
 import { CheckCircle, AlertCircle, X, Info } from 'lucide-react';
