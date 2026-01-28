@@ -50,6 +50,8 @@ const translations = {
     'reliability': 'Fiabilité',
     'thanks_vote': 'Vote enregistré',
     'too_far': 'Trop loin pour voter',
+    'your_report': 'Votre signalement',
+    'wait_confirmation': 'En attente de confirmation par la communauté',
   },
   sw: {
     'tab_map': 'Ramani',
@@ -98,6 +100,8 @@ const translations = {
     'reliability': 'Uaminifu',
     'thanks_vote': 'Kura imepokelewa',
     'too_far': 'Mbali sana kupiga kura',
+    'your_report': 'Ripoti yako',
+    'wait_confirmation': 'Inasubiri uthibitisho wa jamii',
   }
 };
 

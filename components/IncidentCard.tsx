@@ -28,6 +28,7 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
 }) => {
   const { t } = useLanguage();
   const isSentinel = currentUser.role === UserRole.SENTINELLE;
+  const isReporter = currentUser.uid === incident.reporterId;
   const hasVoted = incident.likes.includes(currentUser.uid) || incident.dislikes.includes(currentUser.uid);
   const isNearby = distance !== undefined && distance <= 100;
 
@@ -159,10 +160,11 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
          </div>
       </div>
 
-      {/* Actions */}
+      {/* Actions Logic */}
       {!compact && incident.status === IncidentStatus.EN_ATTENTE && (
         <div className="pt-2">
           {isSentinel ? (
+            /* SENTINEL VALIDATION ACTIONS */
             <div className="grid grid-cols-2 gap-3">
               <button 
                 onClick={() => onValidate(incident.id, true)}
@@ -177,7 +179,14 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
                 <X className="w-4 h-4 mr-2" /> {t('reject')}
               </button>
             </div>
+          ) : isReporter ? (
+             /* REPORTER STATUS VIEW (No Voting on own report) */
+             <div className="text-center py-3 bg-blue-50/50 rounded-xl border border-blue-100 flex flex-col items-center justify-center">
+                <span className="text-xs text-blue-800 font-bold mb-0.5">{t('your_report')}</span>
+                <span className="text-[10px] text-blue-600">{t('wait_confirmation')}</span>
+             </div>
           ) : (
+             /* CITIZEN VOTING ACTIONS */
              isNearby && !hasVoted ? (
               <div className="grid grid-cols-2 gap-3">
                 <button 

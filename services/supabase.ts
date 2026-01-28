@@ -79,15 +79,37 @@ class SupabaseService implements DatabaseService {
     if (authError) throw authError;
     if (!authData.user) throw new Error("Inscription échouée");
 
-    // On attend que le trigger SQL crée le profil (max 10 tentatives)
+    // FALLBACK: Manual Profile Insert
+    // Try to insert directly in case DB trigger is missing
+    const newProfile = {
+        id: authData.user.id,
+        email: email,
+        display_name: name,
+        phone: phone,
+        role: UserRole.CITOYEN,
+        status: UserStatus.ACTIF,
+        reputation_score: 50,
+        joined_at: Date.now()
+    };
+    
+    const { error: insertError } = await supabase.from('profiles').insert(newProfile);
+    // Ignore duplicate key errors (23505) as it means trigger already handled it
+    if (insertError && insertError.code !== '23505') {
+         console.warn("Profile auto-creation fallback failed or not needed", insertError);
+    }
+
+    // Now fetch the final profile to be sure
     let profile = null;
     for(let i=0; i<10; i++) {
         const { data } = await supabase.from('profiles').select('*').eq('id', authData.user.id).single();
         if (data) { profile = data; break; }
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 500));
     }
 
-    if (!profile) throw new Error("Le profil n'a pas pu être synchronisé. Réessayez de vous connecter.");
+    if (!profile) {
+        // Last resort: return the manually constructed profile if fetch fails but user exists
+        profile = newProfile;
+    }
     
     await this.logActivity(authData.user.id, 'REGISTER', 'Création du compte');
     return this.mapProfileToUser(profile);

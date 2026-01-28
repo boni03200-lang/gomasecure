@@ -80,8 +80,8 @@ const AppContent = () => {
           },
           { 
              enableHighAccuracy: true, 
-             timeout: 20000, 
-             maximumAge: 1000
+             timeout: 10000, 
+             maximumAge: 0 // Force fresh location, no caching for realism
           }
        );
     } else {
