@@ -80,6 +80,9 @@ class SupabaseService implements DatabaseService {
     if (authError) throw authError;
     if (!authData.user) throw new Error("Inscription échouée");
 
+    // AUTO-ADMIN LOGIC FOR TESTING
+    const isAdmin = email.toLowerCase().includes('admin');
+
     // FALLBACK: Manual Profile Insert
     // Try to insert directly in case DB trigger is missing
     const newProfile = {
@@ -87,9 +90,9 @@ class SupabaseService implements DatabaseService {
         email: email,
         display_name: name,
         phone: phone,
-        role: UserRole.CITOYEN,
+        role: isAdmin ? UserRole.ADMINISTRATEUR : UserRole.CITOYEN,
         status: UserStatus.ACTIF,
-        reputation_score: 50,
+        reputation_score: isAdmin ? 100 : 50,
         joined_at: Date.now()
     };
     
