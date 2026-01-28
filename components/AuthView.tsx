@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Mail, Lock, User as UserIcon, ArrowRight, ShieldCheck, Loader2, Info, X, Phone } from 'lucide-react';
-import { db } from '../services/supabase'; // CHANGED
+import { Mail, Lock, User as UserIcon, ArrowRight, ShieldCheck, Loader2, Phone } from 'lucide-react';
+import { db } from '../services/supabase';
 import { User } from '../types';
 
 interface AuthViewProps {
@@ -16,7 +16,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin, showToast }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
-  const [showDemoModal, setShowDemoModal] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,12 +38,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin, showToast }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const fillDemo = (e: string, p: string) => {
-      setEmail(e);
-      setPassword(p);
-      setShowDemoModal(false);
   };
 
   return (
@@ -148,61 +141,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin, showToast }) => {
             >
               {isLogin ? "Pas encore de compte ? S'inscrire" : "Déjà un compte ? Se connecter"}
             </button>
-
-            {isLogin && (
-                <button 
-                    onClick={() => setShowDemoModal(true)}
-                    className="flex items-center text-xs font-bold text-blue-300 hover:text-blue-200 bg-blue-500/10 px-3 py-1.5 rounded-full border border-blue-500/20"
-                >
-                    <Info className="w-3 h-3 mr-1.5" />
-                    Afficher les comptes démo
-                </button>
-            )}
           </div>
         </div>
       </div>
-
-      {/* DEMO ACCOUNTS POPUP MODAL */}
-      {showDemoModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
-                  <div className="bg-gray-100 p-4 border-b border-gray-200 flex justify-between items-center">
-                      <h3 className="font-bold text-gray-800 flex items-center">
-                          <ShieldCheck className="w-5 h-5 mr-2 text-blue-600" />
-                          Comptes de Démonstration
-                      </h3>
-                      <button onClick={() => setShowDemoModal(false)} className="p-1 hover:bg-gray-200 rounded-full">
-                          <X className="w-5 h-5 text-gray-500" />
-                      </button>
-                  </div>
-                  <div className="p-4 space-y-3">
-                      <p className="text-xs text-gray-500 mb-2">Assurez-vous d'avoir créé ces comptes dans Supabase Auth.</p>
-                      
-                       <button 
-                         onClick={() => fillDemo('mama@goma.cd', 'password')}
-                         className="w-full flex items-center p-3 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors text-left border border-blue-100 group"
-                       >
-                          <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mr-3 font-bold group-hover:bg-white">S</div>
-                          <div>
-                              <div className="font-bold text-gray-900">Sentinelle</div>
-                              <div className="text-xs text-gray-500">mama@goma.cd</div>
-                          </div>
-                       </button>
-
-                       <button 
-                         onClick={() => fillDemo('jean@goma.cd', 'password')}
-                         className="w-full flex items-center p-3 bg-green-50 hover:bg-green-100 rounded-xl transition-colors text-left border border-green-100 group"
-                       >
-                          <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center mr-3 font-bold group-hover:bg-white">C</div>
-                          <div>
-                              <div className="font-bold text-gray-900">Citoyen</div>
-                              <div className="text-xs text-gray-500">jean@goma.cd</div>
-                          </div>
-                       </button>
-                  </div>
-              </div>
-          </div>
-      )}
     </div>
   );
 };

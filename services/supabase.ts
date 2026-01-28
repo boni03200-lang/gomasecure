@@ -6,7 +6,12 @@ import { GOMA_CENTER } from '../constants';
 const SUPABASE_URL = 'https://jpytwlfapvmamtnnvayg.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpweXR3bGZhcHZtYW10bm52YXlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1OTE1NzYsImV4cCI6MjA4NTE2NzU3Nn0.FGW4QBts3TNzLdENnUjLqBcqYk44ygNFosu94s5YYUA';
 
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    detectSessionInUrl: false
+  }
+});
 
 // --- INTERFACE COMMUNE ---
 interface DatabaseService {
@@ -27,13 +32,17 @@ interface DatabaseService {
 // --- SUPABASE SERVICE IMPLEMENTATION ---
 class SupabaseService implements DatabaseService {
   private async logActivity(userId: string, action: ActivityAction, details: string, targetId?: string) {
-    await supabase.from('activity_logs').insert({
-      user_id: userId,
-      action,
-      details,
-      timestamp: Date.now(),
-      target_id: targetId
-    });
+    try {
+        await supabase.from('activity_logs').insert({
+        user_id: userId,
+        action,
+        details,
+        timestamp: Date.now(),
+        target_id: targetId
+        });
+    } catch (e) {
+        console.error("Failed to log activity", e);
+    }
   }
 
   async login(email: string, password?: string): Promise<User> {
@@ -85,7 +94,11 @@ class SupabaseService implements DatabaseService {
   }
 
   async getAllUsers() {
-    const { data } = await supabase.from('profiles').select('*').order('reputation_score', { ascending: false });
+    const { data, error } = await supabase.from('profiles').select('*').order('reputation_score', { ascending: false });
+    if (error) {
+        if (error.message !== 'signal is aborted without reason') console.error("Error fetching users", error);
+        return [];
+    }
     return (data || []).map(this.mapProfileToUser);
   }
 
@@ -100,7 +113,11 @@ class SupabaseService implements DatabaseService {
   }
 
   async getUserActivity(uid: string) {
-    const { data } = await supabase.from('activity_logs').select('*').eq('user_id', uid).order('timestamp', { ascending: false });
+    const { data, error } = await supabase.from('activity_logs').select('*').eq('user_id', uid).order('timestamp', { ascending: false });
+    if (error) {
+        if (error.message !== 'signal is aborted without reason') console.error("Error fetching logs", error);
+        return [];
+    }
     return (data || []).map(log => ({
         id: log.id,
         userId: log.user_id,
@@ -114,7 +131,7 @@ class SupabaseService implements DatabaseService {
   async getIncidents() {
     const { data, error } = await supabase.from('incidents').select('*').order('timestamp', { ascending: false });
     if (error) {
-        console.error("Erreur incidents:", error);
+        if (error.message !== 'signal is aborted without reason') console.error("Erreur incidents:", error);
         return [];
     }
     return (data || []).map(this.mapDbToIncident);
@@ -144,14 +161,18 @@ class SupabaseService implements DatabaseService {
     await this.logActivity(user.uid, 'REPORT', `Signalement: ${incidentData.type}`, data.id);
     
     // Notification automatique pour tous
-    await supabase.from('notifications').insert({
-        user_id: 'ALL',
-        title: "Nouvel Incident",
-        message: `Un incident (${incidentData.type}) a été signalé.`,
-        type: NotificationType.ACTION,
-        timestamp: Date.now(),
-        related_incident_id: data.id
-    });
+    try {
+        await supabase.from('notifications').insert({
+            user_id: 'ALL',
+            title: "Nouvel Incident",
+            message: `Un incident (${incidentData.type}) a été signalé.`,
+            type: NotificationType.ACTION,
+            timestamp: Date.now(),
+            related_incident_id: data.id
+        });
+    } catch (e) {
+        console.warn("Failed to send notification", e);
+    }
 
     return this.mapDbToIncident(data);
   }
@@ -204,11 +225,18 @@ class SupabaseService implements DatabaseService {
   }
 
   async getNotifications(userId: string) {
-    const { data } = await supabase.from('notifications')
+    const { data, error } = await supabase.from('notifications')
         .select('*')
         .or(`user_id.eq.${userId},user_id.eq.ALL`)
         .order('timestamp', { ascending: false })
         .limit(20);
+
+    if (error) {
+        // Return empty array on specific errors to prevent crash loop in polling
+        if (error.message === 'signal is aborted without reason' || error.message.includes('aborted')) return [];
+        console.error("Error fetching notifications", error);
+        return [];
+    }
         
     return (data || []).map(n => ({
         id: n.id,

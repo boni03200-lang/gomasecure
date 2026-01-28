@@ -9,7 +9,7 @@ import { AuthView } from './components/AuthView';
 import { NotificationPanel } from './components/NotificationPanel';
 import { UserProfile } from './components/UserProfile';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
-import { db } from './services/supabase'; // CHANGED FROM firebase TO supabase
+import { db } from './services/supabase';
 import { User, Incident, TabView, UserRole, IncidentType, IncidentStatus, Notification } from './types';
 import { GOMA_CENTER, SOS_MESSAGE_TEMPLATE } from './constants';
 import { CheckCircle, AlertCircle, X, Info } from 'lucide-react';
@@ -52,26 +52,29 @@ const AppContent = () => {
   // Initial Data Load
   useEffect(() => {
     const initData = async () => {
-      // In Supabase, we might not want to fetch EVERYTHING at once in a real large app, but for compatibility:
       try {
         const incs = await db.getIncidents();
         setIncidents(incs);
 
         const usrs = await db.getAllUsers();
         setUsers(usrs);
-      } catch (e) {
-        console.error("Error loading initial data", e);
+      } catch (e: any) {
+        if (e.message !== 'signal is aborted without reason') {
+           console.error("Error loading initial data", e);
+        }
       }
 
       // Geolocation with Timeout
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => {
-           console.warn("GPS failed, using default center", err);
-           setUserLocation(GOMA_CENTER);
-        },
-        { timeout: 7000, enableHighAccuracy: true } // 7s timeout then fallback
-      );
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            (err) => {
+               console.warn("GPS failed, using default center", err);
+               setUserLocation(GOMA_CENTER);
+            },
+            { timeout: 7000, enableHighAccuracy: true }
+        );
+      }
     };
     initData();
   }, []);
@@ -79,13 +82,30 @@ const AppContent = () => {
   // Poll Notifications
   useEffect(() => {
       if (!user) return;
-      // Realtime subscription could be better here, but keeping polling for consistent behaviour
-      const interval = setInterval(async () => {
-          const notifs = await db.getNotifications(user.uid);
-          // Sort new first
-          setNotifications(notifs.sort((a, b) => b.timestamp - a.timestamp));
-      }, 5000); // Polling every 5s to save quota
-      return () => clearInterval(interval);
+      
+      let isMounted = true;
+
+      const fetchNotifs = async () => {
+          try {
+              const notifs = await db.getNotifications(user.uid);
+              if (isMounted) {
+                  setNotifications(notifs.sort((a, b) => b.timestamp - a.timestamp));
+              }
+          } catch (error: any) {
+              if (error.message !== 'signal is aborted without reason' && error.name !== 'AbortError') {
+                  console.error("Notification polling error:", error);
+              }
+          }
+      };
+
+      // Initial fetch
+      fetchNotifs();
+
+      const interval = setInterval(fetchNotifs, 5000); 
+      return () => {
+          isMounted = false;
+          clearInterval(interval);
+      };
   }, [user]);
 
   const handleCreateIncident = async (data: { type: IncidentType, description: string, media?: File }) => {
@@ -100,9 +120,6 @@ const AppContent = () => {
     }
 
     try {
-      // In a real implementation, upload file to Storage here and get URL
-      // const mediaUrl = await db.uploadFile(data.media); 
-      
       const resultIncident = await db.createIncident({
         ...data,
         location: userLocation || GOMA_CENTER,
@@ -115,7 +132,7 @@ const AppContent = () => {
       setIsSubmitting(false);
       setActiveTab('LIST');
       showToast('Incident signalé avec succès', 'success');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       setIsSubmitting(false);
       showToast("Erreur lors de l'envoi", 'error');
@@ -124,51 +141,73 @@ const AppContent = () => {
 
   const handleVote = async (id: string, type: 'like' | 'dislike') => {
     if (!user) return;
-    const updated = await db.voteIncident(id, user.uid, type);
-    setIncidents(prev => prev.map(i => i.id === id ? updated : i));
-    showToast('Vote enregistré', 'success');
+    try {
+        const updated = await db.voteIncident(id, user.uid, type);
+        setIncidents(prev => prev.map(i => i.id === id ? updated : i));
+        showToast('Vote enregistré', 'success');
+    } catch (e) {
+        console.error(e);
+    }
   };
 
   const handleValidate = async (id: string, isValid: boolean) => {
     if (!user) return;
-    await db.updateIncidentStatus(id, isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE, user.uid);
-    // Refresh list to get updated data
-    const incs = await db.getIncidents();
-    setIncidents(incs);
-    showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
+    try {
+        await db.updateIncidentStatus(id, isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE, user.uid);
+        const incs = await db.getIncidents();
+        setIncidents(incs);
+        showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
+    } catch (e) {
+        console.error(e);
+    }
   };
   
   const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
       if(!user) return;
-      await db.updateIncidentStatus(id, status, user.uid);
-      const incs = await db.getIncidents();
-      setIncidents(incs);
-      showToast(`Statut mis à jour : ${status}`, 'success');
+      try {
+          await db.updateIncidentStatus(id, status, user.uid);
+          const incs = await db.getIncidents();
+          setIncidents(incs);
+          showToast(`Statut mis à jour : ${status}`, 'success');
+      } catch (e) {
+          console.error(e);
+      }
   };
 
   const handleSOS = async () => {
     if (!user) return;
-    await db.createIncident({
-      type: IncidentType.SOS,
-      description: SOS_MESSAGE_TEMPLATE,
-      location: userLocation || GOMA_CENTER
-    }, user);
-    
-    const incs = await db.getIncidents();
-    setIncidents(incs);
-    showToast('Alerte SOS transmise !', 'error');
+    try {
+        await db.createIncident({
+            type: IncidentType.SOS,
+            description: SOS_MESSAGE_TEMPLATE,
+            location: userLocation || GOMA_CENTER
+        }, user);
+        
+        const incs = await db.getIncidents();
+        setIncidents(incs);
+        showToast('Alerte SOS transmise !', 'error');
+    } catch (e) {
+        console.error(e);
+    }
   };
 
   const markNotificationRead = async (id: string) => {
-     await db.markNotificationRead(id);
-     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+     try {
+         await db.markNotificationRead(id);
+         setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+     } catch (e) {
+         console.error(e);
+     }
   };
 
   const markAllRead = async () => {
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      notifications.forEach(n => {
-          if (!n.read) db.markNotificationRead(n.id);
-      });
+      try {
+          const unread = notifications.filter(n => !n.read);
+          await Promise.all(unread.map(n => db.markNotificationRead(n.id)));
+      } catch (e) {
+          console.error(e);
+      }
   };
 
   if (!user) {
