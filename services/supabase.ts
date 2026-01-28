@@ -164,22 +164,40 @@ class SupabaseService implements DatabaseService {
     try {
         const fileExt = file.name.split('.').pop() || 'tmp';
         const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-        const bucketName = 'incidents'; // Ensure this bucket exists in Supabase Storage
+        const bucketName = 'incidents'; 
 
+        // 1. TENTATIVE UPLOAD STORAGE (Si Bucket configuré)
         const { error: uploadError } = await supabase.storage
             .from(bucketName)
             .upload(fileName, file);
 
-        if (uploadError) {
-            console.error("Media upload failed:", uploadError);
-            return null;
+        if (!uploadError) {
+            const { data } = supabase.storage
+                .from(bucketName)
+                .getPublicUrl(fileName);
+            return data.publicUrl;
         }
 
-        const { data } = supabase.storage
-            .from(bucketName)
-            .getPublicUrl(fileName);
-            
-        return data.publicUrl;
+        console.warn("Storage upload failed (Bucket missing?), fallback to Base64.", uploadError);
+
+        // 2. FALLBACK BASE64 (Si Storage échoue, on stocke directement dans la DB)
+        // Note: C'est moins performant mais garantit que la démo fonctionne
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = reader.result as string;
+                // Petit check de taille pour éviter de planter la DB si le fichier est énorme
+                if (base64String.length > 2000000) { // Limite ~2MB pour le fallback
+                    console.error("Fichier trop volumineux pour le fallback Base64");
+                    resolve(null);
+                } else {
+                    resolve(base64String);
+                }
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+        });
+
     } catch (e) {
         console.error("Error uploading media:", e);
         return null;
