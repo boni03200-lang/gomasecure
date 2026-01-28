@@ -42,6 +42,7 @@ const AppContent = () => {
   // Added accuracy to state
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number, accuracy?: number} | null>(null);
   const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   
   // Toast State
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
@@ -293,6 +294,17 @@ const AppContent = () => {
       }
   };
 
+  const handleNotificationNavigate = (incidentId: string) => {
+      const incident = incidents.find(i => i.id === incidentId);
+      if (incident) {
+          setSelectedIncidentId(incident.id);
+          setActiveTab('MAP');
+          setIsNotificationPanelOpen(false);
+          // Small timeout to allow MapView to mount and receive the ID
+          setTimeout(() => setSelectedIncidentId(null), 3000); 
+      }
+  };
+
   if (!user) {
     return <AuthView onLogin={setUser} showToast={showToast} />;
   }
@@ -328,6 +340,7 @@ const AppContent = () => {
         notifications={notifications}
         onMarkRead={markNotificationRead}
         onMarkAllRead={markAllRead}
+        onNavigate={handleNotificationNavigate}
       />
 
       {activeTab === 'MAP' && (
@@ -338,6 +351,8 @@ const AppContent = () => {
              setActiveTab('LIST');
           }} 
           userLocation={userLocation}
+          highlightedId={selectedIncidentId}
+          selectedId={selectedIncidentId}
         />
       )}
       
@@ -351,6 +366,8 @@ const AppContent = () => {
               onVote={handleVote} 
               onValidate={handleValidate}
               distance={userLocation ? 50 : undefined} 
+              className={selectedIncidentId === inc.id ? 'ring-4 ring-blue-500 ring-opacity-50' : ''}
+              domId={inc.id}
             />
           ))}
         </div>

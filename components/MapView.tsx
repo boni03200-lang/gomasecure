@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { Incident, IncidentStatus, User, IncidentType } from '../types';
@@ -163,10 +163,18 @@ export const MapView: React.FC<MapViewProps> = ({
   const defaultCenter = { lat: -1.6585, lng: 29.2205 };
   const [mapType, setMapType] = useState<'STREET' | 'SATELLITE'>('STREET');
   const [centerTrigger, setCenterTrigger] = useState(0);
+  const markerRefs = useRef<{[key: string]: L.Marker | null}>({});
 
   const validIncidents = useMemo(() => {
     return incidents.filter(incident => !!getSafePosition(incident.location));
   }, [incidents]);
+
+  // Handle auto-opening popup for selectedId
+  useEffect(() => {
+    if (selectedId && markerRefs.current[selectedId]) {
+      markerRefs.current[selectedId]?.openPopup();
+    }
+  }, [selectedId]);
 
   // Styles de cartes professionnels
   const tiles = {
@@ -258,6 +266,7 @@ export const MapView: React.FC<MapViewProps> = ({
           return (
             <Marker 
               key={incident.id} 
+              ref={(ref) => { markerRefs.current[incident.id] = ref; }}
               position={safePos}
               icon={getMarkerIcon(incident.status, incident.type, incident.id === selectedId)}
               eventHandlers={{

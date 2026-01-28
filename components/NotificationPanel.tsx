@@ -1,6 +1,6 @@
 import React from 'react';
 import { Notification, NotificationType } from '../types';
-import { X, Bell, CheckCircle2, AlertTriangle, Info, Check } from 'lucide-react';
+import { X, Bell, CheckCircle2, AlertTriangle, Info, Check, ArrowRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -11,14 +11,22 @@ interface NotificationPanelProps {
   notifications: Notification[];
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
+  onNavigate: (incidentId: string) => void;
 }
 
 export const NotificationPanel: React.FC<NotificationPanelProps> = ({
-  isOpen, onClose, notifications, onMarkRead, onMarkAllRead
+  isOpen, onClose, notifications, onMarkRead, onMarkAllRead, onNavigate
 }) => {
   const { t } = useLanguage();
 
   if (!isOpen) return null;
+
+  const handleNotificationClick = (notif: Notification) => {
+    onMarkRead(notif.id);
+    if (notif.relatedIncidentId) {
+        onNavigate(notif.relatedIncidentId);
+    }
+  };
 
   const getIcon = (type: NotificationType) => {
     switch (type) {
@@ -67,8 +75,8 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
             notifications.map((notif) => (
               <div 
                 key={notif.id} 
-                onClick={() => onMarkRead(notif.id)}
-                className={`p-4 rounded-xl border transition-all cursor-pointer relative group ${getBgColor(notif.type, notif.read)} ${notif.read ? 'border-transparent' : 'shadow-sm'}`}
+                onClick={() => handleNotificationClick(notif)}
+                className={`p-4 rounded-xl border transition-all cursor-pointer relative group ${getBgColor(notif.type, notif.read)} ${notif.read ? 'border-transparent' : 'shadow-sm hover:shadow-md'}`}
               >
                 {!notif.read && (
                    <div className="absolute top-4 right-4 w-2 h-2 bg-red-500 rounded-full"></div>
@@ -80,9 +88,17 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
                    <div className="ml-3 flex-1">
                       <h4 className={`text-sm font-bold ${notif.read ? 'text-gray-700' : 'text-gray-900'}`}>{notif.title}</h4>
                       <p className={`text-xs mt-1 leading-relaxed ${notif.read ? 'text-gray-500' : 'text-gray-700'}`}>{notif.message}</p>
-                      <span className="text-[10px] text-gray-400 mt-2 block font-medium">
-                        {formatDistanceToNow(notif.timestamp, { addSuffix: true, locale: fr })}
-                      </span>
+                      
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[10px] text-gray-400 block font-medium">
+                            {formatDistanceToNow(notif.timestamp, { addSuffix: true, locale: fr })}
+                        </span>
+                        {notif.relatedIncidentId && (
+                            <span className="flex items-center text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                Voir <ArrowRight className="w-3 h-3 ml-1" />
+                            </span>
+                        )}
+                      </div>
                    </div>
                 </div>
               </div>
