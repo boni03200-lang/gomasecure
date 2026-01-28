@@ -9,7 +9,7 @@ import { AuthView } from './components/AuthView';
 import { NotificationPanel } from './components/NotificationPanel';
 import { UserProfile } from './components/UserProfile';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
-import { db } from './services/firebase';
+import { db, supabase } from './services/supabase'; // Switched to Real Backend
 import { User, Incident, TabView, UserRole, IncidentType, IncidentStatus, Notification } from './types';
 import { GOMA_CENTER, SOS_MESSAGE_TEMPLATE } from './constants';
 import { CheckCircle, AlertCircle, X, Info } from 'lucide-react';
@@ -63,23 +63,58 @@ const AppContent = () => {
            console.error("Error loading initial data", e);
         }
       }
-
-      // Geolocation with Timeout
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-            (err) => {
-               console.warn("GPS failed, using default center", err);
-               setUserLocation(GOMA_CENTER);
-            },
-            { timeout: 7000, enableHighAccuracy: true }
-        );
-      }
     };
+
+    // Geolocation with Watch for High Accuracy
+    let watchId: number;
+    if (navigator.geolocation) {
+       watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+             // Update location continuously for better accuracy
+             setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          },
+          (err) => {
+             console.warn("GPS failed, using default center", err);
+             // Only set default if we don't have a location yet
+             setUserLocation(prev => prev || GOMA_CENTER);
+          },
+          { 
+             enableHighAccuracy: true, 
+             timeout: 20000, 
+             maximumAge: 1000
+          }
+       );
+    } else {
+        setUserLocation(GOMA_CENTER);
+    }
+
     initData();
+
+    return () => {
+        if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
-  // Poll Notifications
+  // Real-time Subscriptions (Incidents & Notifications)
+  useEffect(() => {
+      const channel = supabase.channel('realtime_updates')
+        .on(
+            'postgres_changes', 
+            { event: '*', schema: 'public', table: 'incidents' }, 
+            (payload) => {
+                // For simplicity and consistency, refresh the full list on change
+                // In a larger app, we would merge the payload (new/updated row) into state
+                db.getIncidents().then(setIncidents);
+            }
+        )
+        .subscribe();
+
+      return () => {
+          supabase.removeChannel(channel);
+      };
+  }, []);
+
+  // Poll Notifications (and fallback for data)
   useEffect(() => {
       if (!user) return;
       
@@ -100,11 +135,26 @@ const AppContent = () => {
 
       // Initial fetch
       fetchNotifs();
+      
+      // Also subscribe to notifications for this user
+      const notifChannel = supabase.channel(`notifications:${user.uid}`)
+        .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.uid}` },
+            (payload) => {
+                // Fetch fresh notifications
+                fetchNotifs();
+                showToast(payload.new.title || 'Nouvelle Notification', 'info');
+            }
+        )
+        .subscribe();
 
-      const interval = setInterval(fetchNotifs, 5000); 
+      const interval = setInterval(fetchNotifs, 10000); // Poll less frequently since we have realtime
+      
       return () => {
           isMounted = false;
           clearInterval(interval);
+          supabase.removeChannel(notifChannel);
       };
   }, [user]);
 
@@ -127,6 +177,7 @@ const AppContent = () => {
         mediaType: mediaType
       }, user);
 
+      // Optimistic update not strictly needed with realtime, but good for perceived speed
       setIncidents(prev => [resultIncident, ...prev]);
 
       setIsSubmitting(false);
@@ -183,8 +234,7 @@ const AppContent = () => {
             location: userLocation || GOMA_CENTER
         }, user);
         
-        const incs = await db.getIncidents();
-        setIncidents(incs);
+        // No need to fetch manually if realtime is on, but safe to do so
         showToast('Alerte SOS transmise !', 'error');
     } catch (e) {
         console.error(e);

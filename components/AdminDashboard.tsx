@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Incident, IncidentStatus, IncidentType, User, UserRole, UserStatus, Notification, ActivityLog } from '../types';
-import { db } from '../services/firebase';
+import { db } from '../services/supabase';
 import { MapView } from './MapView';
 import { ReportGenerator } from './ReportGenerator';
 import { 
