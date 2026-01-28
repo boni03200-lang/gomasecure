@@ -7,7 +7,7 @@ interface IncidentFormProps {
   onSubmit: (data: { type: IncidentType; description: string; media?: File }) => void;
   onCancel: () => void;
   isSubmitting: boolean;
-  userLocation: { lat: number; lng: number } | null;
+  userLocation: { lat: number; lng: number; accuracy?: number } | null;
 }
 
 const MAX_RECORDING_TIME = 30; // 30s limit
@@ -390,7 +390,10 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
             <div className="flex items-center text-xs font-medium text-blue-600 mt-1">
               <MapPin className="w-3 h-3 mr-1" />
               {userLocation ? (
-                <span>{userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}</span>
+                <span>
+                    {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+                    {userLocation.accuracy && <span className="text-gray-400 ml-1"> (±{Math.round(userLocation.accuracy)}m)</span>}
+                </span>
               ) : (
                  <span className="animate-pulse">{t('gps_pending')}</span>
               )}

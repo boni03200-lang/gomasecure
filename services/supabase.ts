@@ -27,6 +27,7 @@ interface DatabaseService {
   updateIncidentStatus(incidentId: string, status: IncidentStatus, validatorId?: string): Promise<Incident>;
   getNotifications(userId: string): Promise<Notification[]>;
   markNotificationRead(notifId: string): Promise<void>;
+  uploadMedia(file: File): Promise<string | null>;
 }
 
 // --- SUPABASE SERVICE IMPLEMENTATION ---
@@ -157,6 +158,32 @@ class SupabaseService implements DatabaseService {
         return [];
     }
     return (data || []).map(this.mapDbToIncident);
+  }
+
+  async uploadMedia(file: File): Promise<string | null> {
+    try {
+        const fileExt = file.name.split('.').pop() || 'tmp';
+        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+        const bucketName = 'incidents'; // Ensure this bucket exists in Supabase Storage
+
+        const { error: uploadError } = await supabase.storage
+            .from(bucketName)
+            .upload(fileName, file);
+
+        if (uploadError) {
+            console.error("Media upload failed:", uploadError);
+            return null;
+        }
+
+        const { data } = supabase.storage
+            .from(bucketName)
+            .getPublicUrl(fileName);
+            
+        return data.publicUrl;
+    } catch (e) {
+        console.error("Error uploading media:", e);
+        return null;
+    }
   }
 
   async createIncident(incidentData: Partial<Incident>, user: User) {

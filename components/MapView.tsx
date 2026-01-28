@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { Incident, IncidentStatus, User, IncidentType } from '../types';
 import { Layers, Navigation, Crosshair, Map as MapIcon, Clock, ThumbsUp, ArrowRight, FileAudio } from 'lucide-react';
@@ -89,12 +89,12 @@ interface MapViewProps {
   currentUser: User | null;
   onIncidentClick: (incident: Incident) => void;
   onMapClick?: () => void;
-  userLocation: { lat: number, lng: number } | null;
+  userLocation: { lat: number, lng: number, accuracy?: number } | null;
   highlightedId?: string | null;
   selectedId?: string | null;
 }
 
-const LocationMarker = ({ position }: { position: { lat: number, lng: number } }) => {
+const LocationMarker = ({ position, accuracy }: { position: { lat: number, lng: number }, accuracy?: number }) => {
   const safePos = getSafePosition(position);
   if (!safePos) return null;
 
@@ -111,6 +111,13 @@ const LocationMarker = ({ position }: { position: { lat: number, lng: number } }
         })}
         zIndexOffset={-100}
       />
+      {accuracy && accuracy < 2000 && (
+         <Circle 
+            center={safePos} 
+            radius={accuracy} 
+            pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.1, weight: 1, opacity: 0.5 }} 
+         />
+      )}
     </>
   );
 };
@@ -243,7 +250,7 @@ export const MapView: React.FC<MapViewProps> = ({
         
         <MapClickHandler onMapClick={onMapClick} />
         
-        {userLocation && <LocationMarker position={userLocation} />}
+        {userLocation && <LocationMarker position={userLocation} accuracy={userLocation.accuracy} />}
         
         {validIncidents.map((incident) => {
           const safePos = getSafePosition(incident.location);

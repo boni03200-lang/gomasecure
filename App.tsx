@@ -39,7 +39,8 @@ const AppContent = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeTab, setActiveTab] = useState<TabView>('MAP');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  // Added accuracy to state
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number, accuracy?: number} | null>(null);
   const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   
   // Toast State
@@ -71,7 +72,12 @@ const AppContent = () => {
        watchId = navigator.geolocation.watchPosition(
           (pos) => {
              // Update location continuously for better accuracy
-             setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+             // Capture accuracy metric
+             setUserLocation({ 
+                 lat: pos.coords.latitude, 
+                 lng: pos.coords.longitude,
+                 accuracy: pos.coords.accuracy
+             });
           },
           (err) => {
              console.warn("GPS failed, using default center", err);
@@ -102,8 +108,6 @@ const AppContent = () => {
             'postgres_changes', 
             { event: '*', schema: 'public', table: 'incidents' }, 
             (payload) => {
-                // For simplicity and consistency, refresh the full list on change
-                // In a larger app, we would merge the payload (new/updated row) into state
                 db.getIncidents().then(setIncidents);
             }
         )
@@ -142,7 +146,6 @@ const AppContent = () => {
             'postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.uid}` },
             (payload) => {
-                // Fetch fresh notifications
                 fetchNotifs();
                 showToast(payload.new.title || 'Nouvelle Notification', 'info');
             }
@@ -160,9 +163,21 @@ const AppContent = () => {
 
   const handleCreateIncident = async (data: { type: IncidentType, description: string, media?: File }) => {
     if (!user) return;
+    
+    // STRICT Location Check
+    if (!userLocation) {
+        showToast("Localisation GPS requise pour signaler. Attendez l'acquisition...", "error");
+        return;
+    }
+
+    // STRICT Accuracy Check (Must be better than 100 meters)
+    if (userLocation.accuracy && userLocation.accuracy > 100) {
+        showToast(`Signal GPS trop faible (Précision: ±${Math.round(userLocation.accuracy)}m). Rapprochez-vous de l'extérieur.`, 'error');
+        return;
+    }
+
     setIsSubmitting(true);
     
-    // Determine media type correctly
     let mediaType: 'image' | 'video' | 'audio' = 'image';
     if (data.media) {
         if (data.media.type.startsWith('audio')) mediaType = 'audio';
@@ -170,14 +185,31 @@ const AppContent = () => {
     }
 
     try {
+      let finalMediaUrl: string | undefined = undefined;
+
+      // Upload Media to Storage for Real-Time Access
+      if (data.media) {
+          showToast("Téléchargement du média...", "info");
+          const uploadedUrl = await db.uploadMedia(data.media);
+          
+          if (uploadedUrl) {
+              finalMediaUrl = uploadedUrl;
+          } else {
+              // FAIL SAFE: Do NOT use local URL for DB as others can't see it.
+              console.warn("Upload failed");
+              showToast("Echec upload média. Signalement envoyé sans média.", "error");
+              finalMediaUrl = undefined;
+          }
+      }
+
       const resultIncident = await db.createIncident({
         ...data,
-        location: userLocation || GOMA_CENTER,
-        mediaUrl: data.media ? URL.createObjectURL(data.media) : undefined, // Still local URL for demo if no storage bucket
+        location: userLocation, // Use strict user location
+        mediaUrl: finalMediaUrl, 
         mediaType: mediaType
       }, user);
 
-      // Optimistic update not strictly needed with realtime, but good for perceived speed
+      // Optimistic update
       setIncidents(prev => [resultIncident, ...prev]);
 
       setIsSubmitting(false);
@@ -227,14 +259,15 @@ const AppContent = () => {
 
   const handleSOS = async () => {
     if (!user) return;
+    const loc = userLocation || GOMA_CENTER; 
+
     try {
         await db.createIncident({
             type: IncidentType.SOS,
             description: SOS_MESSAGE_TEMPLATE,
-            location: userLocation || GOMA_CENTER
+            location: loc
         }, user);
         
-        // No need to fetch manually if realtime is on, but safe to do so
         showToast('Alerte SOS transmise !', 'error');
     } catch (e) {
         console.error(e);
