@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User as UserIcon, ArrowRight, ShieldCheck, Loader2, Info, X, Phone } from 'lucide-react';
-import { db } from '../services/firebase';
+import { db } from '../services/supabase'; // CHANGED
 import { User } from '../types';
 
 interface AuthViewProps {
@@ -32,8 +32,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin, showToast }) => {
       }
       if (showToast) showToast(`Bienvenue, ${user.displayName}!`, 'success');
       onLogin(user);
-    } catch (err) {
-      setError('Identifiants invalides ou erreur de connexion.');
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Identifiants invalides ou erreur de connexion.');
       if (showToast) showToast('Erreur de connexion', 'error');
     } finally {
       setIsLoading(false);
@@ -175,7 +176,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin, showToast }) => {
                       </button>
                   </div>
                   <div className="p-4 space-y-3">
-                      <p className="text-xs text-gray-500 mb-2">Cliquez sur un compte pour remplir automatiquement les champs.</p>
+                      <p className="text-xs text-gray-500 mb-2">Assurez-vous d'avoir créé ces comptes dans Supabase Auth.</p>
                       
                        <button 
                          onClick={() => fillDemo('mama@goma.cd', 'password')}
@@ -196,17 +197,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin, showToast }) => {
                           <div>
                               <div className="font-bold text-gray-900">Citoyen</div>
                               <div className="text-xs text-gray-500">jean@goma.cd</div>
-                          </div>
-                       </button>
-
-                       <button 
-                         onClick={() => fillDemo('admin@police.goma.cd', 'password')}
-                         className="w-full flex items-center p-3 bg-red-50 hover:bg-red-100 rounded-xl transition-colors text-left border border-red-100 group"
-                       >
-                          <div className="w-10 h-10 bg-red-100 text-red-600 rounded-full flex items-center justify-center mr-3 font-bold group-hover:bg-white">A</div>
-                          <div>
-                              <div className="font-bold text-gray-900">Administrateur</div>
-                              <div className="text-xs text-gray-500">admin@police.goma.cd</div>
                           </div>
                        </button>
                   </div>

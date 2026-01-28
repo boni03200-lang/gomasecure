@@ -9,7 +9,7 @@ import { AuthView } from './components/AuthView';
 import { NotificationPanel } from './components/NotificationPanel';
 import { UserProfile } from './components/UserProfile';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
-import { db } from './services/firebase';
+import { db } from './services/supabase'; // CHANGED FROM firebase TO supabase
 import { User, Incident, TabView, UserRole, IncidentType, IncidentStatus, Notification } from './types';
 import { GOMA_CENTER, SOS_MESSAGE_TEMPLATE } from './constants';
 import { CheckCircle, AlertCircle, X, Info } from 'lucide-react';
@@ -52,11 +52,16 @@ const AppContent = () => {
   // Initial Data Load
   useEffect(() => {
     const initData = async () => {
-      const incs = await db.getIncidents();
-      setIncidents(incs);
+      // In Supabase, we might not want to fetch EVERYTHING at once in a real large app, but for compatibility:
+      try {
+        const incs = await db.getIncidents();
+        setIncidents(incs);
 
-      const usrs = await db.getAllUsers();
-      setUsers(usrs);
+        const usrs = await db.getAllUsers();
+        setUsers(usrs);
+      } catch (e) {
+        console.error("Error loading initial data", e);
+      }
 
       // Geolocation with Timeout
       navigator.geolocation.getCurrentPosition(
@@ -74,11 +79,12 @@ const AppContent = () => {
   // Poll Notifications
   useEffect(() => {
       if (!user) return;
+      // Realtime subscription could be better here, but keeping polling for consistent behaviour
       const interval = setInterval(async () => {
           const notifs = await db.getNotifications(user.uid);
           // Sort new first
           setNotifications(notifs.sort((a, b) => b.timestamp - a.timestamp));
-      }, 3000);
+      }, 5000); // Polling every 5s to save quota
       return () => clearInterval(interval);
   }, [user]);
 
@@ -93,33 +99,27 @@ const AppContent = () => {
         else if (data.media.type.startsWith('video')) mediaType = 'video';
     }
 
-    // Simulate upload delay
-    setTimeout(async () => {
+    try {
+      // In a real implementation, upload file to Storage here and get URL
+      // const mediaUrl = await db.uploadFile(data.media); 
+      
       const resultIncident = await db.createIncident({
         ...data,
         location: userLocation || GOMA_CENTER,
-        mediaUrl: data.media ? URL.createObjectURL(data.media) : undefined,
+        mediaUrl: data.media ? URL.createObjectURL(data.media) : undefined, // Still local URL for demo if no storage bucket
         mediaType: mediaType
       }, user);
 
-      // Check if it was a merge (update existing) or a creation
-      setIncidents(prev => {
-          const exists = prev.find(i => i.id === resultIncident.id);
-          if (exists) {
-              // Update existing
-              return prev.map(i => i.id === resultIncident.id ? resultIncident : i);
-          } else {
-              // Add new
-              return [resultIncident, ...prev];
-          }
-      });
+      setIncidents(prev => [resultIncident, ...prev]);
 
       setIsSubmitting(false);
       setActiveTab('LIST');
-      
-      const isMerged = (resultIncident.reportCount || 1) > 1 && resultIncident.reporterId !== user.uid;
-      showToast(isMerged ? 'Signalement ajouté à un incident existant' : 'Incident signalé avec succès', 'success');
-    }, 1500);
+      showToast('Incident signalé avec succès', 'success');
+    } catch (e) {
+      console.error(e);
+      setIsSubmitting(false);
+      showToast("Erreur lors de l'envoi", 'error');
+    }
   };
 
   const handleVote = async (id: string, type: 'like' | 'dislike') => {
@@ -132,7 +132,7 @@ const AppContent = () => {
   const handleValidate = async (id: string, isValid: boolean) => {
     if (!user) return;
     await db.updateIncidentStatus(id, isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE, user.uid);
-    // Refresh list
+    // Refresh list to get updated data
     const incs = await db.getIncidents();
     setIncidents(incs);
     showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
@@ -153,7 +153,7 @@ const AppContent = () => {
       description: SOS_MESSAGE_TEMPLATE,
       location: userLocation || GOMA_CENTER
     }, user);
-    // Switch to map to show alert location
+    
     const incs = await db.getIncidents();
     setIncidents(incs);
     showToast('Alerte SOS transmise !', 'error');
@@ -165,9 +165,7 @@ const AppContent = () => {
   };
 
   const markAllRead = async () => {
-      // Optimistic update
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      // In real app, call API for each or batch
       notifications.forEach(n => {
           if (!n.read) db.markNotificationRead(n.id);
       });

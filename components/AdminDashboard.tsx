@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Incident, IncidentStatus, IncidentType, User, UserRole, UserStatus, Notification, ActivityLog } from '../types';
-import { db } from '../services/firebase';
+import { db } from '../services/supabase'; // CHANGED
 import { MapView } from './MapView';
 import { ReportGenerator } from './ReportGenerator';
 import { 
@@ -163,8 +163,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [incidents]);
 
   const refreshUsers = async () => {
-    const u = await db.getAllUsers();
-    setUsers(u);
+    try {
+      const u = await db.getAllUsers();
+      setUsers(u);
+    } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
