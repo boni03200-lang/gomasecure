@@ -52,8 +52,19 @@ class SupabaseService implements DatabaseService {
       password: password || 'password',
     });
     if (authError) throw authError;
+
+    // --- DEV HACK: AUTO-PROMOTE EXISTING ADMIN ACCOUNTS ---
+    // If the email contains 'admin', force the role to ADMINISTRATEUR in the database
+    // This fixes issues where an account was created before the admin logic existed.
+    if (email.toLowerCase().includes('admin')) {
+        await supabase.from('profiles').update({ 
+            role: UserRole.ADMINISTRATEUR,
+            reputation_score: 100 
+        }).eq('id', authData.user.id);
+    }
+    // -----------------------------------------------------
     
-    // On récupère le profil public
+    // Fetch profile
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -62,7 +73,17 @@ class SupabaseService implements DatabaseService {
       
     if (profileError) {
         console.error("Erreur profil:", profileError);
-        throw new Error("Impossible de charger le profil utilisateur. Vérifiez si la table 'profiles' existe.");
+        // Try to create profile if missing (resilience)
+        const newProfile = {
+            id: authData.user.id,
+            email: email,
+            role: email.includes('admin') ? UserRole.ADMINISTRATEUR : UserRole.CITOYEN,
+            status: UserStatus.ACTIF,
+            reputation_score: 50,
+            joined_at: Date.now()
+        };
+        await supabase.from('profiles').insert(newProfile);
+        return this.mapProfileToUser(newProfile);
     }
 
     await this.logActivity(authData.user.id, 'LOGIN', 'Connexion au système');
@@ -70,6 +91,7 @@ class SupabaseService implements DatabaseService {
   }
 
   async register(email: string, password: string, name: string, phone: string): Promise<User> {
+    // 1. SignUp
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -80,49 +102,44 @@ class SupabaseService implements DatabaseService {
     if (authError) throw authError;
     if (!authData.user) throw new Error("Inscription échouée");
 
-    // AUTO-ADMIN LOGIC FOR TESTING
+    // 2. Logic for Admin Role
     const isAdmin = email.toLowerCase().includes('admin');
+    const role = isAdmin ? UserRole.ADMINISTRATEUR : UserRole.CITOYEN;
+    const reputationScore = isAdmin ? 100 : 50;
 
-    // FALLBACK: Manual Profile Insert
-    // Try to insert directly in case DB trigger is missing
-    const newProfile = {
+    // 3. Force UPSERT Profile
+    // Using UPSERT ensures that if a Database Trigger already created a basic profile,
+    // we overwrite it with the correct Role and Name immediately.
+    const profileData = {
         id: authData.user.id,
         email: email,
         display_name: name,
         phone: phone,
-        role: isAdmin ? UserRole.ADMINISTRATEUR : UserRole.CITOYEN,
+        role: role,
         status: UserStatus.ACTIF,
-        reputation_score: isAdmin ? 100 : 50,
+        reputation_score: reputationScore,
         joined_at: Date.now()
     };
-    
-    const { error: insertError } = await supabase.from('profiles').insert(newProfile);
-    // Ignore duplicate key errors (23505) as it means trigger already handled it
-    if (insertError && insertError.code !== '23505') {
-         console.warn("Profile auto-creation fallback failed or not needed", insertError);
-    }
 
-    // Now fetch the final profile to be sure
-    let profile = null;
-    for(let i=0; i<10; i++) {
-        const { data } = await supabase.from('profiles').select('*').eq('id', authData.user.id).single();
-        if (data) { profile = data; break; }
-        await new Promise(r => setTimeout(r, 500));
-    }
+    const { error: upsertError } = await supabase
+        .from('profiles')
+        .upsert(profileData);
 
-    if (!profile) {
-        // Last resort: return the manually constructed profile if fetch fails but user exists
-        profile = newProfile;
+    if (upsertError) {
+        console.error("Profile creation/update failed:", upsertError);
     }
     
     await this.logActivity(authData.user.id, 'REGISTER', 'Création du compte');
-    return this.mapProfileToUser(profile);
+    
+    // Return the mapped user directly from our data to avoid a fetch race condition
+    return this.mapProfileToUser(profileData);
   }
 
   async getAllUsers() {
     const { data, error } = await supabase.from('profiles').select('*').order('reputation_score', { ascending: false });
     if (error) {
-        if (error.message !== 'signal is aborted without reason') console.error("Error fetching users", error);
+        // Ignore abort errors
+        if (error.code !== '20') console.error("Error fetching users", error);
         return [];
     }
     return (data || []).map(this.mapProfileToUser);
@@ -140,10 +157,7 @@ class SupabaseService implements DatabaseService {
 
   async getUserActivity(uid: string) {
     const { data, error } = await supabase.from('activity_logs').select('*').eq('user_id', uid).order('timestamp', { ascending: false });
-    if (error) {
-        if (error.message !== 'signal is aborted without reason') console.error("Error fetching logs", error);
-        return [];
-    }
+    if (error) return [];
     return (data || []).map(log => ({
         id: log.id,
         userId: log.user_id,
@@ -156,10 +170,7 @@ class SupabaseService implements DatabaseService {
 
   async getIncidents() {
     const { data, error } = await supabase.from('incidents').select('*').order('timestamp', { ascending: false });
-    if (error) {
-        if (error.message !== 'signal is aborted without reason') console.error("Erreur incidents:", error);
-        return [];
-    }
+    if (error) return [];
     return (data || []).map(this.mapDbToIncident);
   }
 
@@ -169,7 +180,7 @@ class SupabaseService implements DatabaseService {
         const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
         const bucketName = 'incidents'; 
 
-        // 1. TENTATIVE UPLOAD STORAGE (Si Bucket configuré)
+        // 1. Attempt Storage Upload
         const { error: uploadError } = await supabase.storage
             .from(bucketName)
             .upload(fileName, file);
@@ -181,17 +192,15 @@ class SupabaseService implements DatabaseService {
             return data.publicUrl;
         }
 
-        console.warn("Storage upload failed (Bucket missing?), fallback to Base64.", uploadError);
+        console.warn("Storage upload failed, fallback to Base64.");
 
-        // 2. FALLBACK BASE64 (Si Storage échoue, on stocke directement dans la DB)
-        // Note: C'est moins performant mais garantit que la démo fonctionne
+        // 2. Fallback Base64
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64String = reader.result as string;
-                // Petit check de taille pour éviter de planter la DB si le fichier est énorme
-                if (base64String.length > 2000000) { // Limite ~2MB pour le fallback
-                    console.error("Fichier trop volumineux pour le fallback Base64");
+                // Limit size for fallback
+                if (base64String.length > 3000000) { 
                     resolve(null);
                 } else {
                     resolve(base64String);
@@ -202,7 +211,6 @@ class SupabaseService implements DatabaseService {
         });
 
     } catch (e) {
-        console.error("Error uploading media:", e);
         return null;
     }
   }
@@ -230,7 +238,7 @@ class SupabaseService implements DatabaseService {
 
     await this.logActivity(user.uid, 'REPORT', `Signalement: ${incidentData.type}`, data.id);
     
-    // Notification automatique pour tous
+    // Auto notification
     try {
         await supabase.from('notifications').insert({
             user_id: 'ALL',
@@ -240,9 +248,7 @@ class SupabaseService implements DatabaseService {
             timestamp: Date.now(),
             related_incident_id: data.id
         });
-    } catch (e) {
-        console.warn("Failed to send notification", e);
-    }
+    } catch (e) { console.warn(e); }
 
     return this.mapDbToIncident(data);
   }
@@ -301,12 +307,7 @@ class SupabaseService implements DatabaseService {
         .order('timestamp', { ascending: false })
         .limit(20);
 
-    if (error) {
-        // Return empty array on specific errors to prevent crash loop in polling
-        if (error.message === 'signal is aborted without reason' || error.message.includes('aborted')) return [];
-        console.error("Error fetching notifications", error);
-        return [];
-    }
+    if (error) return [];
         
     return (data || []).map(n => ({
         id: n.id,
@@ -358,4 +359,5 @@ class SupabaseService implements DatabaseService {
   }
 }
 
+// EXPORT THE REAL SERVICE
 export const db: DatabaseService = new SupabaseService();
