@@ -173,6 +173,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     refreshUsers();
   }, []);
 
+  // Sync selectedIncident when incidents prop updates (e.g. status change)
+  useEffect(() => {
+    if (selectedIncident) {
+        const fresh = incidents.find(i => i.id === selectedIncident.id);
+        if (fresh && (fresh.status !== selectedIncident.status || fresh.validatedBy !== selectedIncident.validatedBy || fresh.reliabilityScore !== selectedIncident.reliabilityScore)) {
+            setSelectedIncident(fresh);
+        }
+    }
+  }, [incidents]);
+
   useEffect(() => {
     // If SOS appears, select it immediately
     if (criticalSOS) {

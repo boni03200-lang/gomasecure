@@ -112,7 +112,11 @@ const AppContent = () => {
                 // Direct Payload Handling for Instant Updates
                 if (payload.eventType === 'INSERT') {
                     const newInc = db.parseIncident(payload.new);
-                    setIncidents(prev => [newInc, ...prev]);
+                    setIncidents(prev => {
+                        // Prevent duplicates if optimistic update already added it
+                        if (prev.some(i => i.id === newInc.id)) return prev;
+                        return [newInc, ...prev];
+                    });
                 } else if (payload.eventType === 'UPDATE') {
                     const updatedInc = db.parseIncident(payload.new);
                     setIncidents(prev => prev.map(i => i.id === updatedInc.id ? updatedInc : i));
@@ -246,8 +250,11 @@ const AppContent = () => {
   const handleValidate = async (id: string, isValid: boolean) => {
     if (!user) return;
     try {
-        await db.updateIncidentStatus(id, isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE, user.uid);
-        // Optimistic update handled by realtime listener
+        const updated = await db.updateIncidentStatus(id, isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE, user.uid);
+        
+        // Manual update to ensure UI responsiveness (fixes "Status doesn't change" bug)
+        setIncidents(prev => prev.map(i => i.id === id ? updated : i));
+        
         showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
     } catch (e) {
         console.error(e);
@@ -257,7 +264,11 @@ const AppContent = () => {
   const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
       if(!user) return;
       try {
-          await db.updateIncidentStatus(id, status, user.uid);
+          const updated = await db.updateIncidentStatus(id, status, user.uid);
+          
+          // Manual update
+          setIncidents(prev => prev.map(i => i.id === id ? updated : i));
+          
           showToast(`Statut mis à jour : ${status}`, 'success');
       } catch (e) {
           console.error(e);
