@@ -357,8 +357,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           currentUser={user}
           userLocation={null}
           onIncidentClick={setSelectedIncident}
+          onMarkerClick={setSelectedIncident} // Enable direct marker click for admin
           onMapClick={handleMapClick}
           highlightedId={selectedIncident?.id}
+          selectedId={selectedIncident?.id} // Ensure selected marker is highlighted
         />
         <div className="absolute inset-0 bg-blue-900/10 pointer-events-none mix-blend-multiply" />
       </div>

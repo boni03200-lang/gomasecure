@@ -88,6 +88,7 @@ interface MapViewProps {
   incidents: Incident[];
   currentUser: User | null;
   onIncidentClick: (incident: Incident) => void;
+  onMarkerClick?: (incident: Incident) => void;
   onMapClick?: () => void;
   userLocation: { lat: number, lng: number, accuracy?: number } | null;
   highlightedId?: string | null;
@@ -153,7 +154,8 @@ const MapClickHandler = ({ onMapClick }: { onMapClick?: () => void }) => {
 
 export const MapView: React.FC<MapViewProps> = ({ 
   incidents, 
-  onIncidentClick, 
+  onIncidentClick,
+  onMarkerClick,
   onMapClick,
   userLocation, 
   highlightedId,
@@ -172,10 +174,10 @@ export const MapView: React.FC<MapViewProps> = ({
   // Handle auto-opening popup for selectedId
   // Include incidents in deps to re-open popup if marker re-renders due to status change
   useEffect(() => {
-    if (selectedId && markerRefs.current[selectedId]) {
+    if (selectedId && markerRefs.current[selectedId] && !onMarkerClick) {
       markerRefs.current[selectedId]?.openPopup();
     }
-  }, [selectedId, incidents]);
+  }, [selectedId, incidents, onMarkerClick]);
 
   // Styles de cartes professionnels
   const tiles = {
@@ -273,8 +275,11 @@ export const MapView: React.FC<MapViewProps> = ({
               eventHandlers={{
                 click: (e) => {
                   L.DomEvent.stopPropagation(e);
-                  // Optional: also trigger external handler if needed, but Popup handles display
-                  // onIncidentClick(incident); 
+                  // If onMarkerClick is provided (Admin mode), trigger it and prevent/close popup
+                  if (onMarkerClick) {
+                      onMarkerClick(incident);
+                      e.target.closePopup();
+                  }
                 },
               }}
               zIndexOffset={incident.id === selectedId ? 1000 : 0}
