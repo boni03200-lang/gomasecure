@@ -36,6 +36,20 @@ const isAbortError = (e: any) => {
     return e?.name === 'AbortError' || e?.message?.includes('aborted') || e?.message?.includes('signal is aborted');
 };
 
+// Geolocation Distance Helper
+function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in meters
+  return d;
+}
+
 const AppContent = () => {
   const { setLanguage, language } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
@@ -57,11 +71,35 @@ const AppContent = () => {
   };
 
   // --- DATA FILTERING LOGIC ---
-  // STRICT RULE: Only Admins can see SOS alerts.
-  // Standard users (Citoyen/Sentinelle) see everything EXCEPT SOS.
   const publicIncidents = useMemo(() => {
-    return incidents.filter(inc => inc.type !== IncidentType.SOS);
-  }, [incidents]);
+    if (!user) return [];
+
+    // ADMIN: Sees All Incidents (including SOS) regardless of location
+    if (user.role === UserRole.ADMINISTRATEUR) {
+        return incidents;
+    }
+
+    // STANDARD USERS (Citoyen/Sentinelle):
+    // 1. SOS is hidden (unless they reported it? adhering to "Standard users see everything EXCEPT SOS")
+    // 2. Proximity Rule: Only within 200m radius
+    return incidents.filter(inc => {
+        // Hide SOS
+        if (inc.type === IncidentType.SOS) return false;
+
+        // Always show own reports
+        if (inc.reporterId === user.uid) return true;
+
+        // Distance Check (200m)
+        if (!userLocation) return false; // If GPS is off/loading, don't show distant incidents
+
+        const dist = getDistanceFromLatLonInM(
+            userLocation.lat, userLocation.lng,
+            inc.location.lat, inc.location.lng
+        );
+
+        return dist <= 200;
+    });
+  }, [incidents, user, userLocation]);
 
   // Admins see EVERYTHING (passed directly to AdminDashboard via 'incidents' state)
 
@@ -448,18 +486,21 @@ const AppContent = () => {
       
       {activeTab === 'LIST' && (
         <div className="h-full overflow-y-auto p-4 pt-16 bg-gray-100 space-y-4">
-          {publicIncidents.map(inc => (
-            <IncidentCard 
-              key={inc.id} 
-              incident={inc} 
-              currentUser={user} 
-              onVote={handleVote} 
-              onValidate={handleValidate}
-              distance={userLocation ? 50 : undefined} 
-              className={selectedIncidentId === inc.id ? 'ring-4 ring-blue-500 ring-opacity-50' : ''}
-              domId={inc.id}
-            />
-          ))}
+          {publicIncidents.map(inc => {
+            const dist = userLocation ? getDistanceFromLatLonInM(userLocation.lat, userLocation.lng, inc.location.lat, inc.location.lng) : undefined;
+            return (
+              <IncidentCard 
+                key={inc.id} 
+                incident={inc} 
+                currentUser={user} 
+                onVote={handleVote} 
+                onValidate={handleValidate}
+                distance={dist}
+                className={selectedIncidentId === inc.id ? 'ring-4 ring-blue-500 ring-opacity-50' : ''}
+                domId={inc.id}
+              />
+            );
+          })}
         </div>
       )}
 

@@ -247,6 +247,13 @@ class SupabaseService implements DatabaseService {
 
   async createIncident(incidentData: Partial<Incident>, user: User) {
     const location = incidentData.location || GOMA_CENTER;
+    
+    // SENTINEL LOGIC: Auto-validation
+    // If the user is a Sentinel, their report is trusted instantly.
+    const isSentinel = user.role === UserRole.SENTINELLE;
+    const initialStatus = isSentinel ? IncidentStatus.VALIDE : IncidentStatus.EN_ATTENTE;
+    const validatedBy = isSentinel ? user.uid : null;
+
     const newIncident = {
         type: incidentData.type || IncidentType.AUTRE,
         description: incidentData.description || '',
@@ -256,7 +263,8 @@ class SupabaseService implements DatabaseService {
         reporter_id: user.uid,
         media_url: incidentData.mediaUrl || null,
         media_type: incidentData.mediaType || 'image',
-        status: IncidentStatus.EN_ATTENTE,
+        status: initialStatus,
+        validated_by: validatedBy,
         reliability_score: user.reputationScore,
         likes: [],
         dislikes: [],
@@ -266,14 +274,23 @@ class SupabaseService implements DatabaseService {
     const { data, error } = await supabase.from('incidents').insert(newIncident).select().single();
     if (error) throw error;
 
-    await this.logActivity(user.uid, 'REPORT', `Signalement: ${incidentData.type}`, data.id);
+    await this.logActivity(user.uid, 'REPORT', `Signalement: ${incidentData.type} (Statut: ${initialStatus})`, data.id);
     
+    // Notification Logic
     try {
+        const title = isSentinel ? "Alerte Sentinelle" : "Nouvel Incident";
+        const message = isSentinel 
+            ? `Une sentinelle a signalé et validé un incident : ${incidentData.type}`
+            : `Un incident (${incidentData.type}) a été signalé.`;
+        
+        // If Validated (Sentinel), send ALERT (Danger confirmed). If Waiting (Citoyen), send ACTION (Need verification).
+        const type = isSentinel ? NotificationType.ALERT : NotificationType.ACTION;
+
         await supabase.from('notifications').insert({
             user_id: 'ALL',
-            title: "Nouvel Incident",
-            message: `Un incident (${incidentData.type}) a été signalé.`,
-            type: NotificationType.ACTION,
+            title: title,
+            message: message,
+            type: type,
             timestamp: Date.now(),
             related_incident_id: data.id
         });
