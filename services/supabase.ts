@@ -28,6 +28,7 @@ interface DatabaseService {
   getNotifications(userId: string): Promise<Notification[]>;
   markNotificationRead(notifId: string): Promise<void>;
   uploadMedia(file: File): Promise<string | null>;
+  parseIncident(data: any): Incident;
 }
 
 // --- SUPABASE SERVICE IMPLEMENTATION ---
@@ -54,8 +55,6 @@ class SupabaseService implements DatabaseService {
     if (authError) throw authError;
 
     // --- DEV HACK: AUTO-PROMOTE EXISTING ADMIN ACCOUNTS ---
-    // If the email contains 'admin', force the role to ADMINISTRATEUR in the database
-    // This fixes issues where an account was created before the admin logic existed.
     if (email.toLowerCase().includes('admin')) {
         await supabase.from('profiles').update({ 
             role: UserRole.ADMINISTRATEUR,
@@ -73,7 +72,6 @@ class SupabaseService implements DatabaseService {
       
     if (profileError) {
         console.error("Erreur profil:", profileError);
-        // Try to create profile if missing (resilience)
         const newProfile = {
             id: authData.user.id,
             email: email,
@@ -108,8 +106,6 @@ class SupabaseService implements DatabaseService {
     const reputationScore = isAdmin ? 100 : 50;
 
     // 3. Force UPSERT Profile
-    // Using UPSERT ensures that if a Database Trigger already created a basic profile,
-    // we overwrite it with the correct Role and Name immediately.
     const profileData = {
         id: authData.user.id,
         email: email,
@@ -130,15 +126,12 @@ class SupabaseService implements DatabaseService {
     }
     
     await this.logActivity(authData.user.id, 'REGISTER', 'Création du compte');
-    
-    // Return the mapped user directly from our data to avoid a fetch race condition
     return this.mapProfileToUser(profileData);
   }
 
   async getAllUsers() {
     const { data, error } = await supabase.from('profiles').select('*').order('reputation_score', { ascending: false });
     if (error) {
-        // Ignore abort errors
         if (error.code !== '20') console.error("Error fetching users", error);
         return [];
     }
@@ -180,7 +173,6 @@ class SupabaseService implements DatabaseService {
         const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
         const bucketName = 'incidents'; 
 
-        // 1. Attempt Storage Upload
         const { error: uploadError } = await supabase.storage
             .from(bucketName)
             .upload(fileName, file);
@@ -194,12 +186,10 @@ class SupabaseService implements DatabaseService {
 
         console.warn("Storage upload failed, fallback to Base64.");
 
-        // 2. Fallback Base64
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64String = reader.result as string;
-                // Limit size for fallback
                 if (base64String.length > 3000000) { 
                     resolve(null);
                 } else {
@@ -238,7 +228,6 @@ class SupabaseService implements DatabaseService {
 
     await this.logActivity(user.uid, 'REPORT', `Signalement: ${incidentData.type}`, data.id);
     
-    // Auto notification
     try {
         await supabase.from('notifications').insert({
             user_id: 'ALL',
@@ -323,6 +312,10 @@ class SupabaseService implements DatabaseService {
 
   async markNotificationRead(notifId: string) {
     await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+  }
+
+  parseIncident(d: any): Incident {
+      return this.mapDbToIncident(d);
   }
 
   private mapProfileToUser(p: any): User {

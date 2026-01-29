@@ -170,11 +170,12 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [incidents]);
 
   // Handle auto-opening popup for selectedId
+  // Include incidents in deps to re-open popup if marker re-renders due to status change
   useEffect(() => {
     if (selectedId && markerRefs.current[selectedId]) {
       markerRefs.current[selectedId]?.openPopup();
     }
-  }, [selectedId]);
+  }, [selectedId, incidents]);
 
   // Styles de cartes professionnels
   const tiles = {
@@ -265,7 +266,7 @@ export const MapView: React.FC<MapViewProps> = ({
           if (!safePos) return null;
           return (
             <Marker 
-              key={incident.id} 
+              key={`${incident.id}_${incident.status}_${incident.type}`} 
               ref={(ref) => { markerRefs.current[incident.id] = ref; }}
               position={safePos}
               icon={getMarkerIcon(incident.status, incident.type, incident.id === selectedId)}

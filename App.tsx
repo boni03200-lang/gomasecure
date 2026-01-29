@@ -102,14 +102,23 @@ const AppContent = () => {
     };
   }, []);
 
-  // Real-time Subscriptions (Incidents & Notifications)
+  // Real-time Subscriptions (Incidents)
   useEffect(() => {
       const channel = supabase.channel('realtime_updates')
         .on(
             'postgres_changes', 
             { event: '*', schema: 'public', table: 'incidents' }, 
             (payload) => {
-                db.getIncidents().then(setIncidents);
+                // Direct Payload Handling for Instant Updates
+                if (payload.eventType === 'INSERT') {
+                    const newInc = db.parseIncident(payload.new);
+                    setIncidents(prev => [newInc, ...prev]);
+                } else if (payload.eventType === 'UPDATE') {
+                    const updatedInc = db.parseIncident(payload.new);
+                    setIncidents(prev => prev.map(i => i.id === updatedInc.id ? updatedInc : i));
+                } else if (payload.eventType === 'DELETE') {
+                    setIncidents(prev => prev.filter(i => i.id !== payload.old.id));
+                }
             }
         )
         .subscribe();
@@ -238,8 +247,7 @@ const AppContent = () => {
     if (!user) return;
     try {
         await db.updateIncidentStatus(id, isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE, user.uid);
-        const incs = await db.getIncidents();
-        setIncidents(incs);
+        // Optimistic update handled by realtime listener
         showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
     } catch (e) {
         console.error(e);
@@ -250,8 +258,6 @@ const AppContent = () => {
       if(!user) return;
       try {
           await db.updateIncidentStatus(id, status, user.uid);
-          const incs = await db.getIncidents();
-          setIncidents(incs);
           showToast(`Statut mis à jour : ${status}`, 'success');
       } catch (e) {
           console.error(e);
