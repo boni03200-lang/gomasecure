@@ -274,7 +274,12 @@ export const MapView: React.FC<MapViewProps> = ({
               icon={getMarkerIcon(incident.status, incident.type, incident.id === selectedId)}
               eventHandlers={{
                 click: (e) => {
-                  L.DomEvent.stopPropagation(e);
+                  // STOP PROPAGATION TO MAP (Prevents map click handler from firing and deselecting)
+                  if (e.originalEvent) {
+                      e.originalEvent.stopPropagation();
+                      e.originalEvent.preventDefault();
+                  }
+
                   // If onMarkerClick is provided (Admin mode), trigger it and prevent/close popup
                   if (onMarkerClick) {
                       onMarkerClick(incident);
