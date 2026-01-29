@@ -33,7 +33,8 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
 
 // Helper locally to catch AbortErrors if not thrown by service
 const isAbortError = (e: any) => {
-    return e?.name === 'AbortError' || e?.message?.includes('aborted') || e?.message?.includes('signal is aborted');
+    const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : '');
+    return e?.name === 'AbortError' || msg.includes('aborted') || msg.includes('signal is aborted');
 };
 
 // Geolocation Distance Helper
@@ -195,7 +196,7 @@ const AppContent = () => {
         .subscribe();
 
       return () => {
-          supabase.removeChannel(channel);
+          supabase.removeChannel(channel).catch(() => {});
       };
   }, [user]);
 
@@ -238,7 +239,7 @@ const AppContent = () => {
       return () => {
           isMounted = false;
           clearInterval(interval);
-          supabase.removeChannel(notifChannel);
+          supabase.removeChannel(notifChannel).catch(() => {});
       };
   }, [user]);
 

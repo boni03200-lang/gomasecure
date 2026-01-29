@@ -15,10 +15,11 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY,
 
 // --- HELPER FOR ERROR HANDLING ---
 const isAbortError = (error: any): boolean => {
+  const msg = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   return (
     error?.name === 'AbortError' ||
-    error?.message?.includes('aborted') ||
-    error?.message?.includes('signal is aborted')
+    msg.includes('aborted') ||
+    msg.includes('signal is aborted')
   );
 };
 

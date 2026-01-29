@@ -8,9 +8,11 @@ if (!rootElement) throw new Error('Root not found');
 // GLOBAL ERROR SUPPRESSION FOR ABORT ERRORS
 // This catches "signal is aborted without reason" errors from Supabase/Fetch
 window.addEventListener('unhandledrejection', (event) => {
-  const msg = event.reason?.message || '';
+  const reason = event.reason;
+  const msg = (reason instanceof Error ? reason.message : String(reason)).toLowerCase();
+  
   if (
-    event.reason?.name === 'AbortError' || 
+    reason?.name === 'AbortError' || 
     msg.includes('aborted') || 
     msg.includes('signal is aborted')
   ) {

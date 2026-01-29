@@ -37,7 +37,8 @@ const COLORS = {
 
 // Helper to ignore abort errors
 const isAbortError = (e: any) => {
-    return e?.name === 'AbortError' || e?.message?.includes('aborted') || e?.message?.includes('signal is aborted');
+    const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : '');
+    return e?.name === 'AbortError' || msg.includes('aborted') || msg.includes('signal is aborted');
 };
 
 // --- CHARTS SUB-COMPONENTS ---
