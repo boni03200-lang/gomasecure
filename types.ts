@@ -75,7 +75,8 @@ export interface Notification {
 export enum NotificationType {
   ALERT = 'ALERT', // Nearby danger
   INFO = 'INFO', // General info
-  ACTION = 'ACTION' // Sentinel validation request
+  ACTION = 'ACTION', // Sentinel validation request
+  PROMOTION = 'PROMOTION' // Invite to become Sentinel
 }
 
 export type TabView = 'MAP' | 'LIST' | 'REPORT' | 'PROFILE' | 'SOS';

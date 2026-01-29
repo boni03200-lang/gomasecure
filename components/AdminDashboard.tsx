@@ -6,7 +6,7 @@ import { ReportGenerator } from './ReportGenerator';
 import { 
   Search, LogOut, Users, 
   Filter, X, Phone, Check, 
-  AlertTriangle, FileAudio, Shield, Ban, History, UserCheck, ArrowLeft, FileDown, Menu, Siren, Mail, Calendar, Sliders, User as UserIcon, Link2, GitMerge, ChevronLeft, CheckCircle, LogIn, PenTool, ThumbsUp, XCircle, AlertCircle
+  AlertTriangle, FileAudio, Shield, Ban, History, UserCheck, ArrowLeft, FileDown, Menu, Siren, Mail, Calendar, Sliders, User as UserIcon, Link2, GitMerge, ChevronLeft, CheckCircle, LogIn, PenTool, ThumbsUp, XCircle, AlertCircle, Send
 } from 'lucide-react';
 import { formatDistanceToNow, format, subDays, startOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -182,7 +182,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   useEffect(() => {
     if (selectedUser) {
+      setUserHistory([]); // Clear previous history first for UX accuracy
       db.getUserActivity(selectedUser.uid).then(setUserHistory);
+    } else {
+      setUserHistory([]);
     }
   }, [selectedUser]);
 
@@ -234,13 +237,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSelectedIncident(null);
   };
 
-  const handleToggleRole = async () => {
-    if (!selectedUser) return;
-    const newRole = selectedUser.role === UserRole.SENTINELLE ? UserRole.CITOYEN : UserRole.SENTINELLE;
-    await db.updateUserRole(selectedUser.uid, newRole);
-    const updatedUser = { ...selectedUser, role: newRole };
-    setSelectedUser(updatedUser);
-    refreshUsers();
+  const handleInviteSentinel = async () => {
+      if (!selectedUser) return;
+      if (selectedUser.role === UserRole.SENTINELLE) {
+          // Demote immediately if already sentinel (Admin prerogative)
+          await db.updateUserRole(selectedUser.uid, UserRole.CITOYEN);
+          const updatedUser = { ...selectedUser, role: UserRole.CITOYEN };
+          setSelectedUser(updatedUser);
+          refreshUsers();
+      } else {
+          // INVITE if Citoyen
+          await db.sendPromotionInvite(selectedUser.uid);
+          alert(`Invitation envoyée à ${selectedUser.displayName}`);
+      }
   };
 
   const handleToggleBan = async () => {
@@ -833,11 +842,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {/* Action Buttons */}
                         <div className="p-4 grid grid-cols-2 gap-3 border-b border-gray-700 bg-gray-900">
                             <button 
-                                onClick={handleToggleRole} 
+                                onClick={handleInviteSentinel} 
                                 className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${selectedUser.role === UserRole.SENTINELLE ? 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700' : 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'}`}
                             >
-                                <Check className="w-5 h-5 mb-1" />
-                                <span className="text-[10px] font-bold">{selectedUser.role === UserRole.SENTINELLE ? 'Rétrograder Citoyen' : 'Promouvoir Sentinelle'}</span>
+                                {selectedUser.role === UserRole.SENTINELLE ? <XCircle className="w-5 h-5 mb-1" /> : <Send className="w-5 h-5 mb-1" />}
+                                <span className="text-[10px] font-bold">{selectedUser.role === UserRole.SENTINELLE ? 'Rétrograder Citoyen' : 'Inviter Sentinelle'}</span>
                             </button>
                             
                             <button 

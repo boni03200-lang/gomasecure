@@ -1,6 +1,6 @@
 import React from 'react';
 import { Notification, NotificationType } from '../types';
-import { X, Bell, CheckCircle2, AlertTriangle, Info, Check, ArrowRight } from 'lucide-react';
+import { X, Bell, CheckCircle2, AlertTriangle, Info, Check, ArrowRight, ShieldCheck, XCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -12,19 +12,22 @@ interface NotificationPanelProps {
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
   onNavigate: (incidentId: string) => void;
+  onPromotionResponse?: (notifId: string, accept: boolean) => void;
 }
 
 export const NotificationPanel: React.FC<NotificationPanelProps> = ({
-  isOpen, onClose, notifications, onMarkRead, onMarkAllRead, onNavigate
+  isOpen, onClose, notifications, onMarkRead, onMarkAllRead, onNavigate, onPromotionResponse
 }) => {
   const { t } = useLanguage();
 
   if (!isOpen) return null;
 
   const handleNotificationClick = (notif: Notification) => {
-    onMarkRead(notif.id);
-    if (notif.relatedIncidentId) {
-        onNavigate(notif.relatedIncidentId);
+    if (notif.type !== NotificationType.PROMOTION) {
+        onMarkRead(notif.id);
+        if (notif.relatedIncidentId) {
+            onNavigate(notif.relatedIncidentId);
+        }
     }
   };
 
@@ -32,6 +35,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
     switch (type) {
       case NotificationType.ALERT: return <AlertTriangle className="w-5 h-5 text-red-500" />;
       case NotificationType.ACTION: return <CheckCircle2 className="w-5 h-5 text-green-500" />;
+      case NotificationType.PROMOTION: return <ShieldCheck className="w-5 h-5 text-purple-500" />;
       default: return <Info className="w-5 h-5 text-blue-500" />;
     }
   };
@@ -41,6 +45,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
     switch (type) {
       case NotificationType.ALERT: return 'bg-red-50 border-red-100';
       case NotificationType.ACTION: return 'bg-green-50 border-green-100';
+      case NotificationType.PROMOTION: return 'bg-purple-50 border-purple-100';
       default: return 'bg-blue-50 border-blue-100';
     }
   };
@@ -89,6 +94,23 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
                       <h4 className={`text-sm font-bold ${notif.read ? 'text-gray-700' : 'text-gray-900'}`}>{notif.title}</h4>
                       <p className={`text-xs mt-1 leading-relaxed ${notif.read ? 'text-gray-500' : 'text-gray-700'}`}>{notif.message}</p>
                       
+                      {notif.type === NotificationType.PROMOTION && !notif.read && onPromotionResponse && (
+                          <div className="mt-3 flex space-x-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onPromotionResponse(notif.id, true); }}
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center transition-colors"
+                              >
+                                  <Check className="w-3 h-3 mr-1" /> Accepter
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onPromotionResponse(notif.id, false); }}
+                                className="flex-1 bg-white border border-red-200 text-red-500 hover:bg-red-50 text-xs font-bold py-2 rounded-lg flex items-center justify-center transition-colors"
+                              >
+                                  <XCircle className="w-3 h-3 mr-1" /> Refuser
+                              </button>
+                          </div>
+                      )}
+
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-[10px] text-gray-400 block font-medium">
                             {formatDistanceToNow(notif.timestamp, { addSuffix: true, locale: fr })}

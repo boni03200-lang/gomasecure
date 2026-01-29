@@ -29,6 +29,7 @@ interface DatabaseService {
   markNotificationRead(notifId: string): Promise<void>;
   uploadMedia(file: File): Promise<string | null>;
   parseIncident(data: any): Incident;
+  sendPromotionInvite(userId: string): Promise<void>;
 }
 
 // --- SUPABASE SERVICE IMPLEMENTATION ---
@@ -149,8 +150,13 @@ class SupabaseService implements DatabaseService {
   }
 
   async getUserActivity(uid: string) {
-    const { data, error } = await supabase.from('activity_logs').select('*').eq('user_id', uid).order('timestamp', { ascending: false });
+    const { data, error } = await supabase.from('activity_logs')
+        .select('*')
+        .eq('user_id', uid)
+        .order('timestamp', { ascending: false });
+        
     if (error) return [];
+    
     return (data || []).map(log => ({
         id: log.id,
         userId: log.user_id,
@@ -312,6 +318,17 @@ class SupabaseService implements DatabaseService {
 
   async markNotificationRead(notifId: string) {
     await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+  }
+
+  async sendPromotionInvite(userId: string) {
+      await supabase.from('notifications').insert({
+          user_id: userId,
+          title: "Promotion Sentinelle",
+          message: "L'administration souhaite vous promouvoir au rang de Sentinelle. Acceptez-vous cette responsabilité ?",
+          type: NotificationType.PROMOTION,
+          timestamp: Date.now(),
+          read: false
+      });
   }
 
   parseIncident(d: any): Incident {

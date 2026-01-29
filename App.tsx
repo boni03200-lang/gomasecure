@@ -311,6 +311,27 @@ const AppContent = () => {
       }
   };
 
+  const handlePromotionResponse = async (notifId: string, accept: boolean) => {
+      if (!user) return;
+      try {
+          // 1. Mark notification as read
+          await markNotificationRead(notifId);
+          
+          if (accept) {
+              // 2. Update Role in DB
+              await db.updateUserRole(user.uid, UserRole.SENTINELLE);
+              // 3. Update Local User State
+              setUser({ ...user, role: UserRole.SENTINELLE });
+              showToast("Félicitations ! Vous êtes maintenant Sentinelle.", 'success');
+          } else {
+              showToast("Promotion refusée.", 'info');
+          }
+      } catch (e) {
+          console.error(e);
+          showToast("Erreur lors de la mise à jour.", 'error');
+      }
+  };
+
   if (!user) {
     return <AuthView onLogin={setUser} showToast={showToast} />;
   }
@@ -347,6 +368,7 @@ const AppContent = () => {
         onMarkRead={markNotificationRead}
         onMarkAllRead={markAllRead}
         onNavigate={handleNotificationNavigate}
+        onPromotionResponse={handlePromotionResponse}
       />
 
       {activeTab === 'MAP' && (
