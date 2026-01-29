@@ -364,7 +364,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           currentUser={user}
           userLocation={null}
           onIncidentClick={setSelectedIncident}
-          onMarkerClick={setSelectedIncident} // Enable direct marker click for admin
+          // REMOVED onMarkerClick prop to fallback to default popup behavior
           onMapClick={handleMapClick}
           highlightedId={selectedIncident?.id}
           selectedId={selectedIncident?.id} // Ensure selected marker is highlighted
