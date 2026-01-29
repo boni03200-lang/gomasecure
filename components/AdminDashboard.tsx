@@ -163,9 +163,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Mobile responsive toggle for right panel
   const [showRightPanel, setShowRightPanel] = useState(true);
 
-  // Check for critical SOS
+  // Check for critical SOS (Most recent)
   const criticalSOS = useMemo(() => {
-     return incidents.find(i => i.type === IncidentType.SOS && i.status === IncidentStatus.EN_ATTENTE);
+     // Sort descending to get newest SOS
+     const sorted = [...incidents].sort((a, b) => b.timestamp - a.timestamp);
+     return sorted.find(i => i.type === IncidentType.SOS && i.status === IncidentStatus.EN_ATTENTE);
   }, [incidents]);
 
   const refreshUsers = async () => {
@@ -209,7 +211,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // --- FILTER LOGIC OPTIMIZED ---
   const filteredIncidents = useMemo(() => {
-    return incidents.filter(i => {
+    const list = incidents.filter(i => {
         // 1. Text Search
         const matchesSearch = i.type.toLowerCase().includes(searchTerm.toLowerCase()) || 
                               i.id.includes(searchTerm);
@@ -234,6 +236,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         return true;
     });
+    // Force sort by timestamp descending to ensure real-time new items are top
+    return list.sort((a, b) => b.timestamp - a.timestamp);
   }, [incidents, searchTerm, filterStatuses, filterTypes, filterMinReliability, filterDateRange]);
 
   // Filter Users Logic

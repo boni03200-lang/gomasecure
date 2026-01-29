@@ -129,19 +129,26 @@ const AppContent = () => {
                     setIncidents(prev => {
                         // Prevent duplicates if optimistic update already added it
                         if (prev.some(i => i.id === newInc.id)) return prev;
-                        // ADD NEW INCIDENT TO TOP
-                        return [newInc, ...prev];
+                        // ADD NEW INCIDENT AND SORT
+                        const newList = [newInc, ...prev];
+                        return newList.sort((a, b) => b.timestamp - a.timestamp);
                     });
                     
-                    // Optional: Sound alert for admin if high priority
-                    if (newInc.type === IncidentType.SOS && user?.role === UserRole.ADMINISTRATEUR) {
-                        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); // Simple alert sound
+                    // Alert sound for admin if SOS or critical
+                    if ((newInc.type === IncidentType.SOS || newInc.type === IncidentType.AGRESSION) && user?.role === UserRole.ADMINISTRATEUR) {
+                        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
                         audio.play().catch(e => console.log('Audio autoplay blocked'));
+                        showToast(`ALERTE: NOUVEAU ${newInc.type} DÉTECTÉ`, 'error');
+                    } else if (user?.role === UserRole.ADMINISTRATEUR) {
+                        showToast(`Nouveau signalement: ${newInc.type}`, 'info');
                     }
 
                 } else if (payload.eventType === 'UPDATE') {
                     const updatedInc = db.parseIncident(payload.new);
-                    setIncidents(prev => prev.map(i => i.id === updatedInc.id ? updatedInc : i));
+                    setIncidents(prev => {
+                        const list = prev.map(i => i.id === updatedInc.id ? updatedInc : i);
+                        return list.sort((a, b) => b.timestamp - a.timestamp);
+                    });
                 } else if (payload.eventType === 'DELETE') {
                     setIncidents(prev => prev.filter(i => i.id !== payload.old.id));
                 }
@@ -246,7 +253,10 @@ const AppContent = () => {
       }, user);
 
       // Optimistic update
-      setIncidents(prev => [resultIncident, ...prev]);
+      setIncidents(prev => {
+          const list = [resultIncident, ...prev];
+          return list.sort((a, b) => b.timestamp - a.timestamp);
+      });
 
       setIsSubmitting(false);
       setActiveTab('LIST');
@@ -316,11 +326,14 @@ const AppContent = () => {
     const loc = userLocation || GOMA_CENTER; 
 
     try {
-        await db.createIncident({
+        const newSOS = await db.createIncident({
             type: IncidentType.SOS,
             description: SOS_MESSAGE_TEMPLATE,
             location: loc
         }, user);
+        
+        // Immediate optimistic add for SOS user (Admin will get it via subscription)
+        setIncidents(prev => [newSOS, ...prev]);
         
         showToast('Alerte SOS transmise !', 'error');
     } catch (e: any) {
