@@ -31,6 +31,11 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
   );
 };
 
+// Helper locally to catch AbortErrors if not thrown by service
+const isAbortError = (e: any) => {
+    return e?.name === 'AbortError' || e?.message?.includes('aborted') || e?.message?.includes('signal is aborted');
+};
+
 const AppContent = () => {
   const { setLanguage, language } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
@@ -70,7 +75,7 @@ const AppContent = () => {
         const usrs = await db.getAllUsers();
         setUsers(usrs);
       } catch (e: any) {
-        if (e.message !== 'signal is aborted without reason') {
+        if (!isAbortError(e)) {
            console.error("Error loading initial data", e);
         }
       }
@@ -162,7 +167,7 @@ const AppContent = () => {
                   setNotifications(notifs.sort((a, b) => b.timestamp - a.timestamp));
               }
           } catch (error: any) {
-              if (error.message !== 'signal is aborted without reason' && error.name !== 'AbortError') {
+              if (!isAbortError(error)) {
                   console.error("Notification polling error:", error);
               }
           }
@@ -247,7 +252,7 @@ const AppContent = () => {
       setActiveTab('LIST');
       showToast('Incident signalé avec succès', 'success');
     } catch (e: any) {
-      if (e.message !== 'signal is aborted without reason') {
+      if (!isAbortError(e)) {
           console.error(e);
           showToast("Erreur lors de l'envoi", 'error');
       }
@@ -262,7 +267,7 @@ const AppContent = () => {
         setIncidents(prev => prev.map(i => i.id === id ? updated : i));
         showToast('Vote enregistré', 'success');
     } catch (e: any) {
-        if (e.message !== 'signal is aborted without reason') console.error(e);
+        if (!isAbortError(e)) console.error(e);
     }
   };
 
@@ -276,7 +281,7 @@ const AppContent = () => {
         
         showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
     } catch (e: any) {
-        if (e.message !== 'signal is aborted without reason') console.error(e);
+        if (!isAbortError(e)) console.error(e);
     }
   };
   
@@ -299,7 +304,7 @@ const AppContent = () => {
           
           showToast(`Statut mis à jour : ${status}`, 'success');
       } catch (e: any) {
-          if (e.message !== 'signal is aborted without reason') {
+          if (!isAbortError(e)) {
               console.error(e);
               showToast("Erreur de mise à jour", 'error');
           }
@@ -319,7 +324,7 @@ const AppContent = () => {
         
         showToast('Alerte SOS transmise !', 'error');
     } catch (e: any) {
-        if (e.message !== 'signal is aborted without reason') console.error(e);
+        if (!isAbortError(e)) console.error(e);
     }
   };
 
@@ -328,7 +333,7 @@ const AppContent = () => {
          await db.markNotificationRead(id);
          setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
      } catch (e: any) {
-         if (e.message !== 'signal is aborted without reason') console.error(e);
+         if (!isAbortError(e)) console.error(e);
      }
   };
 
@@ -338,7 +343,7 @@ const AppContent = () => {
           const unread = notifications.filter(n => !n.read);
           await Promise.all(unread.map(n => db.markNotificationRead(n.id)));
       } catch (e: any) {
-          if (e.message !== 'signal is aborted without reason') console.error(e);
+          if (!isAbortError(e)) console.error(e);
       }
   };
 
@@ -369,7 +374,7 @@ const AppContent = () => {
               showToast("Promotion refusée.", 'info');
           }
       } catch (e: any) {
-          if (e.message !== 'signal is aborted without reason') {
+          if (!isAbortError(e)) {
               console.error(e);
               showToast("Erreur lors de la mise à jour.", 'error');
           }

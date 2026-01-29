@@ -35,6 +35,11 @@ const COLORS = {
   catOrange: '#f97316',
 };
 
+// Helper to ignore abort errors
+const isAbortError = (e: any) => {
+    return e?.name === 'AbortError' || e?.message?.includes('aborted') || e?.message?.includes('signal is aborted');
+};
+
 // --- CHARTS SUB-COMPONENTS ---
 const CategoryChart = ({ incidents }: { incidents: Incident[] }) => {
   const data = useMemo(() => {
@@ -167,7 +172,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const u = await db.getAllUsers();
       setUsers(u);
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        if (!isAbortError(e)) console.error(e); 
+    }
   };
 
   useEffect(() => {

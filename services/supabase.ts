@@ -13,6 +13,15 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY,
   }
 });
 
+// --- HELPER FOR ERROR HANDLING ---
+const isAbortError = (error: any): boolean => {
+  return (
+    error?.name === 'AbortError' ||
+    error?.message?.includes('aborted') ||
+    error?.message?.includes('signal is aborted')
+  );
+};
+
 // --- INTERFACE COMMUNE ---
 interface DatabaseService {
   login(email: string, password?: string): Promise<User>;
@@ -139,20 +148,28 @@ class SupabaseService implements DatabaseService {
         }
         return (data || []).map(this.mapProfileToUser);
     } catch (e: any) {
-        if (e.message === 'signal is aborted without reason') return [];
+        if (isAbortError(e)) return [];
         console.error(e);
         return [];
     }
   }
 
   async updateUserRole(uid: string, role: UserRole) {
-    await supabase.from('profiles').update({ role }).eq('id', uid);
-    await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de rôle vers ${role}`);
+    try {
+        await supabase.from('profiles').update({ role }).eq('id', uid);
+        await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de rôle vers ${role}`);
+    } catch (e) {
+        if (!isAbortError(e)) console.error(e);
+    }
   }
 
   async updateUserStatus(uid: string, status: UserStatus) {
-    await supabase.from('profiles').update({ status }).eq('id', uid);
-    await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de statut vers ${status}`);
+    try {
+        await supabase.from('profiles').update({ status }).eq('id', uid);
+        await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de statut vers ${status}`);
+    } catch (e) {
+        if (!isAbortError(e)) console.error(e);
+    }
   }
 
   async getUserActivity(uid: string) {
@@ -173,7 +190,7 @@ class SupabaseService implements DatabaseService {
             targetId: log.target_id
         }));
     } catch (e: any) {
-        if (e.message === 'signal is aborted without reason') return [];
+        if (isAbortError(e)) return [];
         return [];
     }
   }
@@ -184,7 +201,7 @@ class SupabaseService implements DatabaseService {
         if (error) return [];
         return (data || []).map(this.mapDbToIncident);
     } catch (e: any) {
-        if (e.message === 'signal is aborted without reason') return [];
+        if (isAbortError(e)) return [];
         console.error(e);
         return [];
     }
@@ -333,24 +350,32 @@ class SupabaseService implements DatabaseService {
             relatedIncidentId: n.related_incident_id
         }));
     } catch (e: any) {
-        if (e.message === 'signal is aborted without reason') return [];
+        if (isAbortError(e)) return [];
         return [];
     }
   }
 
   async markNotificationRead(notifId: string) {
-    await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+    try {
+        await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+    } catch (e) {
+        if (!isAbortError(e)) console.error(e);
+    }
   }
 
   async sendPromotionInvite(userId: string) {
-      await supabase.from('notifications').insert({
-          user_id: userId,
-          title: "Promotion Sentinelle",
-          message: "L'administration souhaite vous promouvoir au rang de Sentinelle. Acceptez-vous cette responsabilité ?",
-          type: NotificationType.PROMOTION,
-          timestamp: Date.now(),
-          read: false
-      });
+    try {
+        await supabase.from('notifications').insert({
+            user_id: userId,
+            title: "Promotion Sentinelle",
+            message: "L'administration souhaite vous promouvoir au rang de Sentinelle. Acceptez-vous cette responsabilité ?",
+            type: NotificationType.PROMOTION,
+            timestamp: Date.now(),
+            read: false
+        });
+    } catch (e) {
+        if (!isAbortError(e)) console.error(e);
+    }
   }
 
   parseIncident(d: any): Incident {
