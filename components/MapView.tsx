@@ -277,13 +277,15 @@ export const MapView: React.FC<MapViewProps> = ({
                   // STOP PROPAGATION TO MAP (Prevents map click handler from firing and deselecting)
                   if (e.originalEvent) {
                       e.originalEvent.stopPropagation();
-                      // REMOVED preventDefault to allow standard popup behavior
                   }
 
                   // If onMarkerClick is provided (special mode), trigger it and prevent/close popup
                   if (onMarkerClick) {
                       onMarkerClick(incident);
                       e.target.closePopup();
+                  } else {
+                      // Explicitly open popup to ensure consistency
+                      e.target.openPopup();
                   }
                 },
               }}

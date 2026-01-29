@@ -360,14 +360,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       <div className="absolute inset-0 z-0">
         <MapView 
-          incidents={filteredIncidents} // Use filtered data for map too
+          incidents={filteredIncidents} 
           currentUser={user}
           userLocation={null}
           onIncidentClick={setSelectedIncident}
-          // REMOVED onMarkerClick prop to fallback to default popup behavior
           onMapClick={handleMapClick}
           highlightedId={selectedIncident?.id}
-          selectedId={selectedIncident?.id} // Ensure selected marker is highlighted
+          selectedId={selectedIncident?.id}
         />
         <div className="absolute inset-0 bg-blue-900/10 pointer-events-none mix-blend-multiply" />
       </div>
