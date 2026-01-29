@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { MapView } from './components/MapView';
 import { IncidentCard } from './components/IncidentCard';
@@ -50,6 +50,15 @@ const AppContent = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
       setToast({ message, type });
   };
+
+  // --- DATA FILTERING LOGIC ---
+  // STRICT RULE: Only Admins can see SOS alerts.
+  // Standard users (Citoyen/Sentinelle) see everything EXCEPT SOS.
+  const publicIncidents = useMemo(() => {
+    return incidents.filter(inc => inc.type !== IncidentType.SOS);
+  }, [incidents]);
+
+  // Admins see EVERYTHING (passed directly to AdminDashboard via 'incidents' state)
 
   // Initial Data Load
   useEffect(() => {
@@ -115,8 +124,16 @@ const AppContent = () => {
                     setIncidents(prev => {
                         // Prevent duplicates if optimistic update already added it
                         if (prev.some(i => i.id === newInc.id)) return prev;
+                        // ADD NEW INCIDENT TO TOP
                         return [newInc, ...prev];
                     });
+                    
+                    // Optional: Sound alert for admin if high priority
+                    if (newInc.type === IncidentType.SOS && user?.role === UserRole.ADMINISTRATEUR) {
+                        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); // Simple alert sound
+                        audio.play().catch(e => console.log('Audio autoplay blocked'));
+                    }
+
                 } else if (payload.eventType === 'UPDATE') {
                     const updatedInc = db.parseIncident(payload.new);
                     setIncidents(prev => prev.map(i => i.id === updatedInc.id ? updatedInc : i));
@@ -130,7 +147,7 @@ const AppContent = () => {
       return () => {
           supabase.removeChannel(channel);
       };
-  }, []);
+  }, [user]);
 
   // Poll Notifications (and fallback for data)
   useEffect(() => {
@@ -264,14 +281,25 @@ const AppContent = () => {
   const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
       if(!user) return;
       try {
+          // 1. Optimistic Update Local State
+          setIncidents(prev => prev.map(i => {
+              if (i.id === id) {
+                  return { ...i, status: status, validatedBy: user.uid };
+              }
+              return i;
+          }));
+
+          // 2. Call DB
           const updated = await db.updateIncidentStatus(id, status, user.uid);
           
-          // Manual update
+          // 3. Confirm with DB result (optional, but good for consistency)
           setIncidents(prev => prev.map(i => i.id === id ? updated : i));
           
           showToast(`Statut mis à jour : ${status}`, 'success');
       } catch (e) {
           console.error(e);
+          // Revert on error could be implemented here
+          showToast("Erreur de mise à jour", 'error');
       }
   };
 
@@ -353,7 +381,7 @@ const AppContent = () => {
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             <AdminDashboard 
               user={user} 
-              incidents={incidents} 
+              incidents={incidents} // Admins see ALL incidents including SOS
               onLogout={() => setUser(null)} 
               onUpdateStatus={handleUpdateStatus}
               notifications={notifications} 
@@ -384,7 +412,7 @@ const AppContent = () => {
 
       {activeTab === 'MAP' && (
         <MapView 
-          incidents={incidents} 
+          incidents={publicIncidents} // Non-admins only see public incidents (No SOS)
           currentUser={user} 
           onIncidentClick={(inc) => {
              setActiveTab('LIST');
@@ -397,7 +425,7 @@ const AppContent = () => {
       
       {activeTab === 'LIST' && (
         <div className="h-full overflow-y-auto p-4 pt-16 bg-gray-100 space-y-4">
-          {incidents.map(inc => (
+          {publicIncidents.map(inc => (
             <IncidentCard 
               key={inc.id} 
               incident={inc} 
@@ -428,7 +456,7 @@ const AppContent = () => {
       {activeTab === 'PROFILE' && (
           <UserProfile 
              user={user} 
-             incidents={incidents} 
+             incidents={publicIncidents} 
              onLogout={() => setUser(null)}
              onLanguageChange={() => setLanguage(language === 'fr' ? 'sw' : 'fr')}
              onToggleNotifications={() => {}}

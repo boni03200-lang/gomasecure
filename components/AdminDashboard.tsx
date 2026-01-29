@@ -6,7 +6,8 @@ import { ReportGenerator } from './ReportGenerator';
 import { 
   Search, LogOut, Users, 
   Filter, X, Phone, Check, 
-  AlertTriangle, FileAudio, Shield, Ban, History, UserCheck, ArrowLeft, FileDown, Menu, Siren, Mail, Calendar, Sliders, User as UserIcon, Link2, GitMerge, ChevronLeft, CheckCircle, LogIn, PenTool, ThumbsUp, XCircle, AlertCircle, Send
+  AlertTriangle, FileAudio, Shield, Ban, History, UserCheck, ArrowLeft, FileDown, Menu, Siren, Mail, Calendar, Sliders, User as UserIcon, Link2, GitMerge, ChevronLeft, CheckCircle, LogIn, PenTool, ThumbsUp, XCircle, AlertCircle, Send,
+  PlayCircle
 } from 'lucide-react';
 import { formatDistanceToNow, format, subDays, startOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -318,6 +319,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Check if incident is new (less than 60 seconds)
+  const isRecent = (ts: number) => {
+      return Date.now() - ts < 60000;
+  };
+
   return (
     <div className="relative w-full h-[100dvh] bg-black overflow-hidden font-sans text-sm">
       
@@ -501,11 +507,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* RIGHT PANEL CONTAINER */}
+      {/* RIGHT PANEL CONTAINER (FEED) */}
       {showRightPanel && (
         <div className={`absolute right-0 bottom-0 w-full md:w-[500px] flex flex-col pointer-events-none z-10 animate-in slide-in-from-right duration-300 ${criticalSOS ? 'top-24' : 'top-14 md:top-10'}`}>
             {/* INCIDENT DATA GRID */}
-            <div className="pointer-events-auto bg-gray-900/95 border-b border-l border-gray-700 h-1/2 flex flex-col">
+            <div className="pointer-events-auto bg-gray-900/95 border-b border-l border-gray-700 h-3/5 flex flex-col">
                 <div className="h-8 bg-gray-800 flex items-center px-2 justify-between border-b border-gray-700">
                     <span className="text-xs font-bold text-gray-300 flex items-center"><ChevronLeft className="w-3 h-3 mr-1"/> Flux ({filteredIncidents.length})</span>
                     <div className="flex space-x-2">
@@ -530,9 +536,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div 
                         key={inc.id}
                         onClick={() => setSelectedIncident(inc)}
-                        className={`flex items-center py-2 px-2 border-b border-gray-800 text-[10px] cursor-pointer hover:bg-gray-800 transition-colors ${inc.type === IncidentType.SOS ? 'bg-red-900/40 border-l-2 border-red-500' : ''} ${selectedIncident?.id === inc.id ? 'bg-blue-900/30' : idx % 2 === 0 ? 'bg-transparent' : 'bg-gray-800/30'}`}
+                        className={`flex items-center py-2 px-2 border-b border-gray-800 text-[10px] cursor-pointer hover:bg-gray-800 transition-colors ${inc.type === IncidentType.SOS ? 'bg-red-900/40 border-l-2 border-red-500' : ''} ${selectedIncident?.id === inc.id ? 'bg-blue-900/30' : idx % 2 === 0 ? 'bg-transparent' : 'bg-gray-800/30'} ${isRecent(inc.timestamp) ? 'animate-pulse' : ''}`}
                       >
-                          <div className="w-16 font-mono text-gray-500 truncate">#{inc.id.split('-')[0]}</div>
+                          <div className="w-16 font-mono text-gray-500 truncate">
+                              {isRecent(inc.timestamp) && <span className="text-green-500 font-bold mr-1">*</span>}
+                              #{inc.id.split('-')[0]}
+                          </div>
                           <div className="flex-1 min-w-0 pr-2">
                               <div className={`font-bold truncate ${inc.type === IncidentType.SOS ? 'text-red-400' : 'text-gray-200'}`}>{inc.type}</div>
                               <div className="text-gray-500 truncate">
@@ -580,126 +589,175 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* POPUP DETAIL CARD */}
+      {/* OVERHAULED DETAIL POPUP (MODAL STYLE) */}
       {selectedIncident && (
-        <div className="absolute top-1/2 left-1/2 md:left-[20%] transform -translate-x-1/2 -translate-y-1/2 md:translate-x-0 w-[90%] md:w-80 bg-white shadow-2xl z-30 animate-in fade-in zoom-in-95 rounded-sm overflow-hidden border border-gray-200">
-           <div className="h-48 bg-gray-200 relative">
-               {selectedIncident.mediaUrl ? (
-                   selectedIncident.mediaType === 'video' ? <video src={selectedIncident.mediaUrl} className="w-full h-full object-cover" controls /> : 
-                   selectedIncident.mediaType === 'audio' ? <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900"><FileAudio className="w-8 h-8 text-blue-400" /><audio controls src={selectedIncident.mediaUrl} className="w-4/5 h-8 mt-2" /></div> : 
-                   <img src={selectedIncident.mediaUrl} className="w-full h-full object-cover" alt="Evidence" />
-               ) : <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-100"><AlertTriangle className="w-12 h-12 opacity-20" /></div>}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+           <div className="w-full max-w-4xl bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-[80vh] md:h-[600px]">
                
-               <button onClick={() => setSelectedIncident(null)} className="absolute top-2 right-2 bg-black/50 hover:bg-black text-white p-1 rounded-full z-10"><X className="w-4 h-4" /></button>
-           </div>
-           
-           <div className="p-4 text-xs space-y-2 text-gray-600">
-               <div className="flex justify-between font-bold text-gray-900">
-                   <span className={selectedIncident.type === IncidentType.SOS ? 'text-red-600 uppercase font-black' : ''}>{selectedIncident.type}</span>
-                   <span className="text-gray-500">#{selectedIncident.id}</span>
-               </div>
-               <p className="bg-gray-50 p-2 rounded border border-gray-100 italic">{selectedIncident.description}</p>
-               
-               {/* CHAIN OF TRUST SECTION - MERGED REPORTERS */}
-               <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-                  
-                  {reportersList.length > 0 && (
-                    <div className="space-y-1">
-                         <div className="flex items-center justify-between text-[10px] text-gray-400 uppercase font-bold mb-1">
-                            <span>Signalé par ({reportersList.length})</span>
-                            {reportersList.length > 1 && (
-                                <div className="flex items-center text-blue-600">
-                                    <div className="w-16 h-1 bg-gray-200 rounded-full mr-2 overflow-hidden">
-                                        <div className="h-full bg-blue-600" style={{ width: `${Math.min(100, reportersList.length * 33)}%` }}></div>
+               {/* LEFT COLUMN: MEDIA & MAP CONTEXT */}
+               <div className="w-full md:w-5/12 bg-black relative flex flex-col">
+                   {/* Media Viewer */}
+                   <div className="flex-1 relative bg-gray-900 flex items-center justify-center overflow-hidden">
+                        {selectedIncident.mediaUrl ? (
+                            selectedIncident.mediaType === 'video' ? 
+                                <video src={selectedIncident.mediaUrl} className="w-full h-full object-contain" controls /> : 
+                            selectedIncident.mediaType === 'audio' ? 
+                                <div className="text-center p-6">
+                                    <div className="w-20 h-20 bg-blue-900/50 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/50">
+                                        <FileAudio className="w-10 h-10 text-blue-400" />
                                     </div>
-                                    Force: {reportersList.length > 2 ? 'Haute' : 'Moyenne'}
-                                </div>
-                            )}
-                         </div>
-
-                         {reportersList.map((rep, idx) => (
-                            <div 
-                                key={`${rep.uid}-${idx}`}
-                                onClick={() => openUserProfile(rep)}
-                                className={`flex items-center justify-between p-1.5 rounded cursor-pointer group transition-colors border border-transparent ${idx === 0 ? 'bg-blue-50/50 hover:bg-blue-50 hover:border-blue-100' : 'hover:bg-gray-50 hover:border-gray-200'}`}
-                            >
-                                <div className="flex items-center text-gray-700 min-w-0">
-                                    {/* Icon Indicator: First one is Source, others are Witnesses */}
-                                    <div className="mr-2 relative flex-shrink-0">
-                                        {rep.role === UserRole.SENTINELLE ? (
-                                            <Shield className="w-3.5 h-3.5 text-blue-600" />
-                                        ) : (
-                                            <UserIcon className="w-3.5 h-3.5 text-gray-400" />
-                                        )}
-                                        {idx === 0 && (
-                                            <span className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full border border-white"></span>
-                                        )}
-                                    </div>
-                                    
-                                    <div className="flex flex-col min-w-0">
-                                        <span className={`font-bold truncate text-[11px] group-hover:text-blue-600 ${idx === 0 ? 'text-gray-900' : 'text-gray-600'}`}>
-                                            {rep.displayName}
-                                        </span>
-                                        <span className="text-[9px] text-gray-400">
-                                            {idx === 0 ? 'Source Initiale' : 'Confirmation (50m)'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center">
-                                    <span className={`text-[9px] font-bold mr-2 ${rep.reputationScore > 80 ? 'text-green-500' : 'text-orange-400'}`}>
-                                        {rep.reputationScore}%
-                                    </span>
-                                    <Link2 className="w-3 h-3 text-gray-300 group-hover:text-blue-400" />
-                                </div>
+                                    <audio controls src={selectedIncident.mediaUrl} className="w-64" />
+                                    <p className="text-gray-400 text-xs mt-4 font-mono">Enregistrement Audio</p>
+                                </div> : 
+                                <img src={selectedIncident.mediaUrl} className="w-full h-full object-contain" alt="Evidence" />
+                        ) : (
+                            <div className="flex flex-col items-center text-gray-600">
+                                <AlertTriangle className="w-16 h-16 opacity-20 mb-2" />
+                                <span className="text-xs font-mono">Aucun média joint</span>
                             </div>
-                         ))}
-                    </div>
-                  )}
-
-                  {validator && (
-                     <div 
-                        onClick={() => openUserProfile(validator)}
-                        className="flex items-center justify-between p-1.5 rounded bg-green-50/30 hover:bg-green-50 cursor-pointer group transition-colors border border-transparent hover:border-green-100 mt-2"
-                     >
-                        <div className="flex items-center text-gray-700">
-                           <CheckCircle className="w-3.5 h-3.5 mr-2 text-green-600" />
-                           <div className="flex flex-col">
-                                <span className="font-bold text-[11px] group-hover:text-green-600">Validé par: {validator.displayName}</span>
-                                <span className="text-[9px] text-green-600/70">Décision Officielle</span>
-                           </div>
+                        )}
+                        
+                        {/* Type Badge */}
+                        <div className={`absolute top-4 left-4 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-lg ${
+                            selectedIncident.type === IncidentType.SOS ? 'bg-red-600 text-white animate-pulse' : 'bg-blue-600 text-white'
+                        }`}>
+                            {selectedIncident.type}
                         </div>
-                        <Link2 className="w-3 h-3 text-gray-300 group-hover:text-green-400" />
-                     </div>
-                  )}
+                   </div>
+
+                   {/* Mini Status Bar */}
+                   <div className="h-14 bg-gray-800 border-t border-gray-700 flex items-center justify-between px-4">
+                       <div className="text-xs text-gray-400">
+                           <span className="block font-bold text-gray-300">Statut Actuel</span>
+                           <span className={`uppercase font-bold ${
+                               selectedIncident.status === IncidentStatus.VALIDE ? 'text-green-500' :
+                               selectedIncident.status === IncidentStatus.REJETE ? 'text-red-500' :
+                               selectedIncident.status === IncidentStatus.RESOLU ? 'text-blue-500' : 'text-orange-500'
+                           }`}>{selectedIncident.status}</span>
+                       </div>
+                       <div className="text-right text-xs text-gray-400">
+                           <span className="block font-bold text-gray-300">Fiabilité</span>
+                           <span className="font-mono">{selectedIncident.reliabilityScore}%</span>
+                       </div>
+                   </div>
                </div>
 
-               <div className="flex items-center justify-between pt-2">
-                   <div className="flex space-x-1">
-                       {selectedIncident.status === IncidentStatus.EN_ATTENTE && (
-                           <>
-                               <button 
-                                 onClick={() => onUpdateStatus(selectedIncident.id, IncidentStatus.VALIDE)} 
-                                 className="bg-green-600 text-white px-2 py-1 rounded flex items-center"
-                                 title="Valider (Urgent)"
-                               >
-                                 <Check className="w-3 h-3 mr-1" /> Valider
-                               </button>
-                               <button 
-                                 onClick={() => {
-                                    if(confirm("Attention: Le rejet d'un SOS pour fausse alerte entraînera le bannissement de l'utilisateur. Confirmer ?")) {
-                                        onUpdateStatus(selectedIncident.id, IncidentStatus.REJETE);
-                                    }
-                                 }} 
-                                 className="bg-red-600 text-white px-2 py-1 rounded flex items-center"
-                                 title={selectedIncident.type === IncidentType.SOS ? "Rejeter & Bannir (Fausse Alerte)" : "Rejeter"}
-                               >
-                                 <X className="w-3 h-3 mr-1" /> Rejeter
-                               </button>
-                           </>
+               {/* RIGHT COLUMN: DETAILS & ACTIONS */}
+               <div className="w-full md:w-7/12 bg-gray-900 flex flex-col border-l border-gray-800">
+                   {/* Header */}
+                   <div className="h-16 border-b border-gray-700 flex items-center justify-between px-6 bg-gray-800/50">
+                       <div>
+                           <h2 className="text-lg font-bold text-white flex items-center">
+                               Incident #{selectedIncident.id.split('-')[0]}
+                           </h2>
+                           <div className="text-xs text-gray-400 flex items-center mt-0.5">
+                               <Calendar className="w-3 h-3 mr-1" />
+                               {format(selectedIncident.timestamp, "dd MMMM yyyy 'à' HH:mm", { locale: fr })}
+                           </div>
+                       </div>
+                       <button onClick={() => setSelectedIncident(null)} className="p-2 hover:bg-gray-700 rounded-full transition-colors text-gray-400 hover:text-white">
+                           <X className="w-5 h-5" />
+                       </button>
+                   </div>
+
+                   {/* Content */}
+                   <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                       {/* Description */}
+                       <div className="mb-6">
+                           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Description</h3>
+                           <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700 text-gray-300 text-sm leading-relaxed">
+                               {selectedIncident.description || "Aucune description fournie par le signaleur."}
+                           </div>
+                       </div>
+
+                       {/* Reporters / Chain of Trust */}
+                       <div className="mb-6">
+                           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                               <span>Chaîne de Confiance</span>
+                               {reportersList.length > 1 && <span className="text-blue-400 text-[10px]">{reportersList.length} sources</span>}
+                           </h3>
+                           <div className="space-y-2">
+                               {reportersList.map((rep, idx) => (
+                                    <div 
+                                        key={idx}
+                                        onClick={() => openUserProfile(rep)}
+                                        className="flex items-center justify-between p-2 rounded bg-gray-800 hover:bg-gray-750 border border-transparent hover:border-gray-600 cursor-pointer transition-all"
+                                    >
+                                        <div className="flex items-center">
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${rep.role === UserRole.SENTINELLE ? 'bg-blue-900 text-blue-200 ring-1 ring-blue-500' : 'bg-gray-700 text-gray-300'}`}>
+                                                {rep.displayName.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <div className="text-sm font-bold text-gray-200 flex items-center">
+                                                    {rep.displayName}
+                                                    {rep.role === UserRole.SENTINELLE && <Shield className="w-3 h-3 ml-1 text-blue-500" />}
+                                                </div>
+                                                <div className="text-[10px] text-gray-500">
+                                                    {idx === 0 ? 'Source Principale' : 'Confirmation'} • {rep.reputationScore}% Réputation
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <ChevronLeft className="w-4 h-4 text-gray-600 rotate-180" />
+                                    </div>
+                               ))}
+                           </div>
+                       </div>
+
+                       {/* Validator Info */}
+                       {validator && (
+                           <div className="mb-6">
+                               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Validation</h3>
+                               <div className="flex items-center p-3 bg-green-900/10 border border-green-900/30 rounded-lg">
+                                    <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
+                                    <div>
+                                        <div className="text-sm font-bold text-green-400">Validé par {validator.displayName}</div>
+                                        <div className="text-[10px] text-green-600/70">Action officielle enregistrée</div>
+                                    </div>
+                               </div>
+                           </div>
                        )}
-                       {selectedIncident.status === IncidentStatus.VALIDE && (
-                           <button onClick={() => onUpdateStatus(selectedIncident.id, IncidentStatus.RESOLU)} className="bg-blue-600 text-white px-3 py-1 rounded font-bold">RÉSOUDRE</button>
-                       )}
+                   </div>
+
+                   {/* Footer Actions */}
+                   <div className="p-6 bg-gray-800 border-t border-gray-700">
+                       <div className="grid grid-cols-2 gap-4">
+                           {selectedIncident.status === IncidentStatus.EN_ATTENTE && (
+                               <>
+                                   <button 
+                                     onClick={() => onUpdateStatus(selectedIncident.id, IncidentStatus.VALIDE)} 
+                                     className="flex items-center justify-center py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-sm transition-all"
+                                   >
+                                       <Check className="w-4 h-4 mr-2" /> Valider l'Incident
+                                   </button>
+                                   <button 
+                                     onClick={() => {
+                                        if(confirm("Attention: Le rejet d'un SOS pour fausse alerte entraînera le bannissement de l'utilisateur. Confirmer ?")) {
+                                            onUpdateStatus(selectedIncident.id, IncidentStatus.REJETE);
+                                        }
+                                     }} 
+                                     className="flex items-center justify-center py-3 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-600/50 hover:border-red-600 rounded-lg font-bold text-sm transition-all"
+                                   >
+                                       <X className="w-4 h-4 mr-2" /> Rejeter (Faux)
+                                   </button>
+                               </>
+                           )}
+                           
+                           {selectedIncident.status === IncidentStatus.VALIDE && (
+                               <button 
+                                 onClick={() => onUpdateStatus(selectedIncident.id, IncidentStatus.RESOLU)} 
+                                 className="col-span-2 flex items-center justify-center py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition-all shadow-lg shadow-blue-900/20"
+                               >
+                                   <CheckCircle className="w-5 h-5 mr-2" /> 
+                                   MARQUER COMME RÉSOLU & NOTIFIER
+                               </button>
+                           )}
+
+                           {selectedIncident.status === IncidentStatus.RESOLU && (
+                               <div className="col-span-2 text-center py-3 bg-gray-700/50 rounded-lg border border-gray-600 text-gray-400 font-mono text-xs">
+                                   Dossier clos et archivé.
+                               </div>
+                           )}
+                       </div>
                    </div>
                </div>
            </div>
