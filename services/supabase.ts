@@ -44,7 +44,7 @@ class SupabaseService implements DatabaseService {
         target_id: targetId
         });
     } catch (e) {
-        console.error("Failed to log activity", e);
+        // Silent fail for logs
     }
   }
 
@@ -131,12 +131,18 @@ class SupabaseService implements DatabaseService {
   }
 
   async getAllUsers() {
-    const { data, error } = await supabase.from('profiles').select('*').order('reputation_score', { ascending: false });
-    if (error) {
-        if (error.code !== '20') console.error("Error fetching users", error);
+    try {
+        const { data, error } = await supabase.from('profiles').select('*').order('reputation_score', { ascending: false });
+        if (error) {
+            if (error.code !== '20') console.error("Error fetching users", error);
+            return [];
+        }
+        return (data || []).map(this.mapProfileToUser);
+    } catch (e: any) {
+        if (e.message === 'signal is aborted without reason') return [];
+        console.error(e);
         return [];
     }
-    return (data || []).map(this.mapProfileToUser);
   }
 
   async updateUserRole(uid: string, role: UserRole) {
@@ -150,27 +156,38 @@ class SupabaseService implements DatabaseService {
   }
 
   async getUserActivity(uid: string) {
-    const { data, error } = await supabase.from('activity_logs')
-        .select('*')
-        .eq('user_id', uid)
-        .order('timestamp', { ascending: false });
+    try {
+        const { data, error } = await supabase.from('activity_logs')
+            .select('*')
+            .eq('user_id', uid)
+            .order('timestamp', { ascending: false });
+            
+        if (error) return [];
         
-    if (error) return [];
-    
-    return (data || []).map(log => ({
-        id: log.id,
-        userId: log.user_id,
-        action: log.action as ActivityAction,
-        details: log.details,
-        timestamp: Number(log.timestamp),
-        targetId: log.target_id
-    }));
+        return (data || []).map(log => ({
+            id: log.id,
+            userId: log.user_id,
+            action: log.action as ActivityAction,
+            details: log.details,
+            timestamp: Number(log.timestamp),
+            targetId: log.target_id
+        }));
+    } catch (e: any) {
+        if (e.message === 'signal is aborted without reason') return [];
+        return [];
+    }
   }
 
   async getIncidents() {
-    const { data, error } = await supabase.from('incidents').select('*').order('timestamp', { ascending: false });
-    if (error) return [];
-    return (data || []).map(this.mapDbToIncident);
+    try {
+        const { data, error } = await supabase.from('incidents').select('*').order('timestamp', { ascending: false });
+        if (error) return [];
+        return (data || []).map(this.mapDbToIncident);
+    } catch (e: any) {
+        if (e.message === 'signal is aborted without reason') return [];
+        console.error(e);
+        return [];
+    }
   }
 
   async uploadMedia(file: File): Promise<string | null> {
@@ -296,24 +313,29 @@ class SupabaseService implements DatabaseService {
   }
 
   async getNotifications(userId: string) {
-    const { data, error } = await supabase.from('notifications')
-        .select('*')
-        .or(`user_id.eq.${userId},user_id.eq.ALL`)
-        .order('timestamp', { ascending: false })
-        .limit(20);
+    try {
+        const { data, error } = await supabase.from('notifications')
+            .select('*')
+            .or(`user_id.eq.${userId},user_id.eq.ALL`)
+            .order('timestamp', { ascending: false })
+            .limit(20);
 
-    if (error) return [];
-        
-    return (data || []).map(n => ({
-        id: n.id,
-        userId: n.user_id,
-        title: n.title,
-        message: n.message,
-        type: n.type as NotificationType,
-        read: n.read,
-        timestamp: Number(n.timestamp),
-        relatedIncidentId: n.related_incident_id
-    }));
+        if (error) return [];
+            
+        return (data || []).map(n => ({
+            id: n.id,
+            userId: n.user_id,
+            title: n.title,
+            message: n.message,
+            type: n.type as NotificationType,
+            read: n.read,
+            timestamp: Number(n.timestamp),
+            relatedIncidentId: n.related_incident_id
+        }));
+    } catch (e: any) {
+        if (e.message === 'signal is aborted without reason') return [];
+        return [];
+    }
   }
 
   async markNotificationRead(notifId: string) {

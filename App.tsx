@@ -247,9 +247,11 @@ const AppContent = () => {
       setActiveTab('LIST');
       showToast('Incident signalé avec succès', 'success');
     } catch (e: any) {
-      console.error(e);
+      if (e.message !== 'signal is aborted without reason') {
+          console.error(e);
+          showToast("Erreur lors de l'envoi", 'error');
+      }
       setIsSubmitting(false);
-      showToast("Erreur lors de l'envoi", 'error');
     }
   };
 
@@ -259,8 +261,8 @@ const AppContent = () => {
         const updated = await db.voteIncident(id, user.uid, type);
         setIncidents(prev => prev.map(i => i.id === id ? updated : i));
         showToast('Vote enregistré', 'success');
-    } catch (e) {
-        console.error(e);
+    } catch (e: any) {
+        if (e.message !== 'signal is aborted without reason') console.error(e);
     }
   };
 
@@ -273,8 +275,8 @@ const AppContent = () => {
         setIncidents(prev => prev.map(i => i.id === id ? updated : i));
         
         showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
-    } catch (e) {
-        console.error(e);
+    } catch (e: any) {
+        if (e.message !== 'signal is aborted without reason') console.error(e);
     }
   };
   
@@ -296,10 +298,11 @@ const AppContent = () => {
           setIncidents(prev => prev.map(i => i.id === id ? updated : i));
           
           showToast(`Statut mis à jour : ${status}`, 'success');
-      } catch (e) {
-          console.error(e);
-          // Revert on error could be implemented here
-          showToast("Erreur de mise à jour", 'error');
+      } catch (e: any) {
+          if (e.message !== 'signal is aborted without reason') {
+              console.error(e);
+              showToast("Erreur de mise à jour", 'error');
+          }
       }
   };
 
@@ -315,8 +318,8 @@ const AppContent = () => {
         }, user);
         
         showToast('Alerte SOS transmise !', 'error');
-    } catch (e) {
-        console.error(e);
+    } catch (e: any) {
+        if (e.message !== 'signal is aborted without reason') console.error(e);
     }
   };
 
@@ -324,8 +327,8 @@ const AppContent = () => {
      try {
          await db.markNotificationRead(id);
          setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-     } catch (e) {
-         console.error(e);
+     } catch (e: any) {
+         if (e.message !== 'signal is aborted without reason') console.error(e);
      }
   };
 
@@ -334,8 +337,8 @@ const AppContent = () => {
       try {
           const unread = notifications.filter(n => !n.read);
           await Promise.all(unread.map(n => db.markNotificationRead(n.id)));
-      } catch (e) {
-          console.error(e);
+      } catch (e: any) {
+          if (e.message !== 'signal is aborted without reason') console.error(e);
       }
   };
 
@@ -365,9 +368,11 @@ const AppContent = () => {
           } else {
               showToast("Promotion refusée.", 'info');
           }
-      } catch (e) {
-          console.error(e);
-          showToast("Erreur lors de la mise à jour.", 'error');
+      } catch (e: any) {
+          if (e.message !== 'signal is aborted without reason') {
+              console.error(e);
+              showToast("Erreur lors de la mise à jour.", 'error');
+          }
       }
   };
 
