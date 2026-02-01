@@ -1,7 +1,9 @@
+
 import React, { useState } from 'react';
 import { Mail, Lock, User as UserIcon, ArrowRight, ShieldCheck, Loader2, Phone } from 'lucide-react';
 import { db } from '../services/supabase';
 import { User } from '../types';
+import { InstallPWA } from './InstallPWA';
 
 interface AuthViewProps {
   onLogin: (user: User) => void;
@@ -142,6 +144,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin, showToast }) => {
               {isLogin ? "Pas encore de compte ? S'inscrire" : "Déjà un compte ? Se connecter"}
             </button>
           </div>
+
+          <InstallPWA />
+
         </div>
       </div>
     </div>

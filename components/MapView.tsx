@@ -222,13 +222,13 @@ export const MapView: React.FC<MapViewProps> = ({
         `}
       </style>
       
-      {/* Floating Controls - Position depends on mode */}
-      <div className={`absolute top-[calc(4rem+env(safe-area-inset-top))] ${leftSidebarOffset ? 'left-16' : 'right-4'} z-[400] flex flex-col space-y-3`}>
+      {/* Floating Controls - Mobile Optimized Position (Bottom Right) */}
+      <div className="absolute bottom-24 right-4 z-[400] flex flex-col space-y-3 pointer-events-auto">
          
          {/* Map Layer Toggle */}
          <button 
             onClick={() => setMapType(prev => prev === 'STREET' ? 'SATELLITE' : 'STREET')}
-            className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/50 flex items-center justify-center text-gray-700 active:scale-95 transition-all"
+            className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-white/50 flex items-center justify-center text-gray-700 active:scale-95 transition-all"
          >
             {mapType === 'STREET' ? <Layers className="w-6 h-6" /> : <MapIcon className="w-6 h-6" />}
          </button>
@@ -236,7 +236,7 @@ export const MapView: React.FC<MapViewProps> = ({
          {/* Recenter GPS */}
          <button 
             onClick={() => setCenterTrigger(c => c + 1)}
-            className={`w-12 h-12 rounded-2xl shadow-lg border flex items-center justify-center active:scale-95 transition-all ${userLocation ? 'bg-blue-600 text-white border-blue-500 shadow-blue-200' : 'bg-white/90 text-gray-400 border-white/50'}`}
+            className={`w-12 h-12 rounded-full shadow-lg border flex items-center justify-center active:scale-95 transition-all ${userLocation ? 'bg-blue-600 text-white border-blue-500 shadow-blue-200' : 'bg-white/90 text-gray-400 border-white/50'}`}
          >
             {userLocation ? <Navigation className="w-6 h-6" /> : <Crosshair className="w-6 h-6 animate-pulse" />}
          </button>

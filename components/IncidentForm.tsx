@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { IncidentType } from '../types';
 import { Camera, MapPin, Mic, StopCircle, Trash2, Play, Pause, Loader2, X, FolderOpen, RefreshCw, AlertTriangle, Flame, Wallet, Skull, Car, UserMinus, HelpCircle, Siren, FileAudio, Video } from 'lucide-react';
@@ -404,7 +405,7 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
           </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
+      <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 py-6 space-y-6 pb-32">
         {/* Incident Types Grid */}
         <div className="space-y-3">
           <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">{t('report_type')}</label>
@@ -516,12 +517,10 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
             placeholder={t('details_placeholder')}
           />
         </div>
-        
-        <div className="h-10"></div>
       </form>
 
-      {/* Footer Submit */}
-      <div className="absolute bottom-0 left-0 right-0 p-5 bg-white border-t border-gray-100 z-20">
+      {/* Footer Submit - With Safe Area Padding */}
+      <div className="absolute bottom-0 left-0 right-0 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] bg-white border-t border-gray-100 z-20">
         <button
           onClick={handleSubmit}
           disabled={isSubmitting || !userLocation || (!description && !media)}
