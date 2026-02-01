@@ -93,6 +93,7 @@ interface MapViewProps {
   userLocation: { lat: number, lng: number, accuracy?: number } | null;
   highlightedId?: string | null;
   selectedId?: string | null;
+  leftSidebarOffset?: boolean; // New prop to shift controls
 }
 
 const LocationMarker = ({ position, accuracy }: { position: { lat: number, lng: number }, accuracy?: number }) => {
@@ -159,7 +160,8 @@ export const MapView: React.FC<MapViewProps> = ({
   onMapClick,
   userLocation, 
   highlightedId,
-  selectedId 
+  selectedId,
+  leftSidebarOffset = false
 }) => {
   const { t } = useLanguage();
   const defaultCenter = { lat: -1.6585, lng: 29.2205 };
@@ -219,8 +221,8 @@ export const MapView: React.FC<MapViewProps> = ({
         `}
       </style>
       
-      {/* Floating Controls - Mobile Optimized Position */}
-      <div className="absolute top-[calc(4rem+env(safe-area-inset-top))] right-4 z-[400] flex flex-col space-y-3">
+      {/* Floating Controls - Position depends on mode */}
+      <div className={`absolute top-[calc(4rem+env(safe-area-inset-top))] ${leftSidebarOffset ? 'left-16' : 'right-4'} z-[400] flex flex-col space-y-3`}>
          
          {/* Map Layer Toggle */}
          <button 

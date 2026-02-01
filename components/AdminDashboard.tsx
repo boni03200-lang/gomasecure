@@ -372,6 +372,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           onMapClick={handleMapClick}
           highlightedId={selectedIncident?.id}
           selectedId={selectedIncident?.id}
+          leftSidebarOffset={true} // Move controls to left to avoid right panel overlap
         />
         <div className="absolute inset-0 bg-blue-900/10 pointer-events-none mix-blend-multiply" />
       </div>
