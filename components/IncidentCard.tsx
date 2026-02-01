@@ -75,9 +75,15 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
 
     if (incident.mediaType === 'video') {
       return (
-        <div className="relative rounded-xl overflow-hidden bg-black shadow-sm">
-          <video controls src={incident.mediaUrl} className="w-full h-56 object-cover" />
-          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-full flex items-center font-bold">
+        <div className="relative rounded-xl overflow-hidden bg-black shadow-sm flex items-center justify-center h-56">
+          <video 
+             controls 
+             playsInline 
+             preload="metadata" 
+             src={incident.mediaUrl} 
+             className="w-full h-full object-contain" 
+          />
+          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-full flex items-center font-bold pointer-events-none">
             <Video className="w-3 h-3 mr-1" /> {t('video')}
           </div>
         </div>

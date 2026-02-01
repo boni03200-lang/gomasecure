@@ -115,12 +115,6 @@ const AppContent = () => {
     if (navigator.geolocation) {
        watchId = navigator.geolocation.watchPosition(
           (pos) => {
-             // Basic Mock Location Heuristic:
-             // If accuracy is exactly 0 or null on some older androids, it's often a mock provider.
-             // Real GPS usually has at least 3-5m variance.
-             // Note: In modern browsers, mock providers can set arbitrary accuracy.
-             // We rely on "Reasonable Accuracy" here.
-             
              setUserLocation({ 
                  lat: pos.coords.latitude, 
                  lng: pos.coords.longitude,
@@ -224,15 +218,11 @@ const AppContent = () => {
   const handleCreateIncident = async (data: { type: IncidentType, description: string, media?: File }) => {
     if (!user) return;
     
-    // 1. Check GPS Presence
     if (!userLocation) {
         showToast("Acquisition GPS en cours... Veuillez patienter.", "error");
         return;
     }
 
-    // 2. Anti-Spoofing Check (Accuracy)
-    // Real GPS signals usually have some noise (5m-20m). 
-    // If accuracy > 100m, it's too vague or potentially spoofed/poor quality.
     if (userLocation.accuracy && userLocation.accuracy > 100) {
         showToast(`Signal GPS trop faible (±${Math.round(userLocation.accuracy)}m). Déplacez-vous à ciel ouvert.`, 'error');
         return;
@@ -240,10 +230,25 @@ const AppContent = () => {
 
     setIsSubmitting(true);
     
+    // Improved Media Type Detection
     let mediaType: 'image' | 'video' | 'audio' = 'image';
     if (data.media) {
-        if (data.media.type.startsWith('audio')) mediaType = 'audio';
-        else if (data.media.type.startsWith('video')) mediaType = 'video';
+        const file = data.media;
+        if (file.type.startsWith('video')) {
+            mediaType = 'video';
+        } else if (file.type.startsWith('audio')) {
+            mediaType = 'audio';
+        } else if (file.type.startsWith('image')) {
+            mediaType = 'image';
+        } else {
+            // Fallback: Check extension if MIME type is generic/missing
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            if (['mp4', 'mov', 'webm', 'ogg', 'avi', 'mkv', '3gp'].includes(ext || '')) {
+                mediaType = 'video';
+            } else if (['mp3', 'wav', 'm4a', 'aac', 'flac'].includes(ext || '')) {
+                mediaType = 'audio';
+            }
+        }
     }
 
     try {
@@ -285,9 +290,6 @@ const AppContent = () => {
   const handleVote = async (id: string, type: 'like' | 'dislike') => {
     if (!user) return;
 
-    // Strict Server-Side Validation Simulation
-    // In a real app, the server would calculate distance. 
-    // Here we check client-side again before sending.
     const incident = incidents.find(i => i.id === id);
     if (incident && userLocation) {
         const dist = getDistanceFromLatLonInM(userLocation.lat, userLocation.lng, incident.location.lat, incident.location.lng);
@@ -415,7 +417,6 @@ const AppContent = () => {
           )}
 
           {selectedIncidentId && activeTab === 'LIST' && (() => {
-               // Auto-scroll to selected incident logic via generic DOM manipulation if needed
                setTimeout(() => {
                    const el = document.getElementById(`incident-${selectedIncidentId}`);
                    if(el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
