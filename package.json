@@ -1,26 +1,28 @@
 {
-  "name": "gomasecure",
+  "name": "gomasecure-pwa",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-leaflet": "^5.0.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "date-fns": "^2.30.0",
     "leaflet": "^1.9.4",
-    "lucide-react": "^0.563.0",
-    "date-fns": "^4.1.0",
-    "@supabase/supabase-js": "^2.93.2"
+    "lucide-react": "^0.294.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/leaflet": "^1.9.8",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@vitejs/plugin-react": "^4.2.0",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0"
   }
 }

@@ -6,24 +6,27 @@ import { GOMA_CENTER } from '../constants';
 const SUPABASE_URL = 'https://jpytwlfapvmamtnnvayg.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpweXR3bGZhcHZtYW10bm52YXlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1OTE1NzYsImV4cCI6MjA4NTE2NzU3Nn0.FGW4QBts3TNzLdENnUjLqBcqYk44ygNFosu94s5YYUA';
 
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: {
-    persistSession: true,
-    detectSessionInUrl: false
-  }
-});
+export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- HELPER FOR ERROR HANDLING ---
-const isAbortError = (error: any): boolean => {
-  const msg = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-  return (
-    error?.name === 'AbortError' ||
-    msg.includes('aborted') ||
-    msg.includes('signal is aborted')
-  );
-};
+// --- UTILS ---
+function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in meters
+  return d;
+}
 
-// --- INTERFACE COMMUNE ---
+function deg2rad(deg: number) {
+  return deg * (Math.PI / 180);
+}
+
+// --- INTERFACE ---
 interface DatabaseService {
   login(email: string, password?: string): Promise<User>;
   register(email: string, password: string, name: string, phone: string): Promise<User>;
@@ -44,219 +47,180 @@ interface DatabaseService {
 
 // --- SUPABASE SERVICE IMPLEMENTATION ---
 class SupabaseService implements DatabaseService {
+  
+  // Helper to log actions in the database
   private async logActivity(userId: string, action: ActivityAction, details: string, targetId?: string) {
     try {
-        await supabase.from('activity_logs').insert({
+      await supabase.from('activity_logs').insert({
         user_id: userId,
         action,
         details,
         timestamp: Date.now(),
         target_id: targetId
-        });
+      });
     } catch (e) {
-        // Silent fail for logs
+      console.error("Failed to log activity", e);
     }
   }
 
   async login(email: string, password?: string): Promise<User> {
+    // 1. Auth with Supabase
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
-      password: password || 'password',
+      password: password || 'password', // Fallback for simple demo flows if needed
     });
-    if (authError) throw authError;
 
-    // --- DEV HACK: AUTO-PROMOTE EXISTING ADMIN ACCOUNTS ---
-    if (email.toLowerCase().includes('admin')) {
-        await supabase.from('profiles').update({ 
-            role: UserRole.ADMINISTRATEUR,
-            reputation_score: 100 
-        }).eq('id', authData.user.id);
-    }
-    // -----------------------------------------------------
+    if (authError) throw authError;
     
-    // Fetch profile
+    // 2. Fetch Profile Details
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', authData.user.id)
       .single();
       
-    if (profileError) {
-        console.error("Erreur profil:", profileError);
-        const newProfile = {
-            id: authData.user.id,
-            email: email,
-            role: email.includes('admin') ? UserRole.ADMINISTRATEUR : UserRole.CITOYEN,
-            status: UserStatus.ACTIF,
-            reputation_score: 50,
-            joined_at: Date.now()
-        };
-        await supabase.from('profiles').insert(newProfile);
-        return this.mapProfileToUser(newProfile);
-    }
+    if (profileError) throw profileError;
 
     await this.logActivity(authData.user.id, 'LOGIN', 'Connexion au système');
     return this.mapProfileToUser(profile);
   }
 
   async register(email: string, password: string, name: string, phone: string): Promise<User> {
-    // 1. SignUp
+    // 1. Create Auth User
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: { 
-        data: { display_name: name, phone: phone } 
+        data: { display_name: name, phone: phone } // Metadata
       }
     });
+
     if (authError) throw authError;
     if (!authData.user) throw new Error("Inscription échouée");
 
-    // 2. Logic for Admin Role
-    const isAdmin = email.toLowerCase().includes('admin');
-    const role = isAdmin ? UserRole.ADMINISTRATEUR : UserRole.CITOYEN;
-    const reputationScore = isAdmin ? 100 : 50;
-
-    // 3. Force UPSERT Profile
-    const profileData = {
+    // 2. Create Profile Entry (If not handled by Postgres Trigger)
+    // We try to insert, if conflict (trigger exists), we fetch.
+    const newProfile = {
         id: authData.user.id,
         email: email,
         display_name: name,
         phone: phone,
-        role: role,
+        role: UserRole.CITOYEN,
         status: UserStatus.ACTIF,
-        reputation_score: reputationScore,
+        reputation_score: 50,
         joined_at: Date.now()
     };
 
-    const { error: upsertError } = await supabase
-        .from('profiles')
-        .upsert(profileData);
-
-    if (upsertError) {
-        console.error("Profile creation/update failed:", upsertError);
-    }
+    const { error: insertError } = await supabase.from('profiles').insert(newProfile);
     
+    // If insert fails, it might be because a Trigger already created it, so we fetch it.
+    if (insertError) {
+        const { data: existingProfile } = await supabase.from('profiles').select('*').eq('id', authData.user.id).single();
+        if (existingProfile) return this.mapProfileToUser(existingProfile);
+    }
+
     await this.logActivity(authData.user.id, 'REGISTER', 'Création du compte');
-    return this.mapProfileToUser(profileData);
+    return this.mapProfileToUser(newProfile);
   }
 
-  async getAllUsers() {
-    try {
-        const { data, error } = await supabase.from('profiles').select('*').order('reputation_score', { ascending: false });
-        if (error) {
-            if (error.code !== '20') console.error("Error fetching users", error);
-            return [];
-        }
-        return (data || []).map(this.mapProfileToUser);
-    } catch (e: any) {
-        if (isAbortError(e)) return [];
-        console.error(e);
-        return [];
-    }
+  async getAllUsers(): Promise<User[]> {
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (error) throw error;
+    return (data || []).map(this.mapProfileToUser);
   }
 
-  async updateUserRole(uid: string, role: UserRole) {
-    try {
-        await supabase.from('profiles').update({ role }).eq('id', uid);
-        await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de rôle vers ${role}`);
-    } catch (e) {
-        if (!isAbortError(e)) console.error(e);
-    }
+  async updateUserRole(uid: string, role: UserRole): Promise<void> {
+    await supabase.from('profiles').update({ role }).eq('id', uid);
+    await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de rôle vers ${role}`);
   }
 
-  async updateUserStatus(uid: string, status: UserStatus) {
-    try {
-        await supabase.from('profiles').update({ status }).eq('id', uid);
-        await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de statut vers ${status}`);
-    } catch (e) {
-        if (!isAbortError(e)) console.error(e);
-    }
+  async updateUserStatus(uid: string, status: UserStatus): Promise<void> {
+    await supabase.from('profiles').update({ status }).eq('id', uid);
+    await this.logActivity(uid, 'PROFILE_UPDATE', `Changement de statut vers ${status}`);
   }
 
-  async getUserActivity(uid: string) {
-    try {
-        const { data, error } = await supabase.from('activity_logs')
-            .select('*')
-            .eq('user_id', uid)
-            .order('timestamp', { ascending: false });
-            
-        if (error) return [];
-        
-        return (data || []).map(log => ({
-            id: log.id,
-            userId: log.user_id,
-            action: log.action as ActivityAction,
-            details: log.details,
-            timestamp: Number(log.timestamp),
-            targetId: log.target_id
-        }));
-    } catch (e: any) {
-        if (isAbortError(e)) return [];
-        return [];
-    }
+  async getUserActivity(uid: string): Promise<ActivityLog[]> {
+    const { data } = await supabase
+      .from('activity_logs')
+      .select('*')
+      .eq('user_id', uid)
+      .order('timestamp', { ascending: false });
+      
+    return (data || []).map(log => ({
+        id: log.id,
+        userId: log.user_id,
+        action: log.action as ActivityAction,
+        details: log.details,
+        timestamp: log.timestamp,
+        targetId: log.target_id
+    }));
   }
 
-  async getIncidents() {
-    try {
-        const { data, error } = await supabase.from('incidents').select('*').order('timestamp', { ascending: false });
-        if (error) return [];
-        return (data || []).map(this.mapDbToIncident);
-    } catch (e: any) {
-        if (isAbortError(e)) return [];
-        console.error(e);
-        return [];
-    }
+  async getIncidents(): Promise<Incident[]> {
+    const { data, error } = await supabase
+      .from('incidents')
+      .select('*')
+      .order('timestamp', { ascending: false });
+      
+    if (error) throw error;
+    return (data || []).map(this.mapDbToIncident);
   }
 
-  async uploadMedia(file: File): Promise<string | null> {
-    try {
-        const fileExt = file.name.split('.').pop() || 'tmp';
-        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-        const bucketName = 'incidents'; 
-
-        const { error: uploadError } = await supabase.storage
-            .from(bucketName)
-            .upload(fileName, file);
-
-        if (!uploadError) {
-            const { data } = supabase.storage
-                .from(bucketName)
-                .getPublicUrl(fileName);
-            return data.publicUrl;
-        }
-
-        console.warn("Storage upload failed, fallback to Base64.");
-
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64String = reader.result as string;
-                if (base64String.length > 3000000) { 
-                    resolve(null);
-                } else {
-                    resolve(base64String);
-                }
-            };
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(file);
-        });
-
-    } catch (e) {
-        return null;
-    }
-  }
-
-  async createIncident(incidentData: Partial<Incident>, user: User) {
+  async createIncident(incidentData: Partial<Incident>, user: User): Promise<Incident> {
+    const MERGE_RADIUS_METERS = 50;
     const location = incidentData.location || GOMA_CENTER;
-    
-    // SENTINEL LOGIC: Auto-validation
-    // If the user is a Sentinel, their report is trusted instantly.
+    const type = incidentData.type || IncidentType.AUTRE;
+
+    // 1. Fetch active incidents to check for duplicates (Merge Logic)
+    const { data: activeIncidents } = await supabase
+      .from('incidents')
+      .select('*')
+      .in('status', [IncidentStatus.EN_ATTENTE, IncidentStatus.VALIDE])
+      .eq('type', type);
+
+    let nearbyIncident = null;
+    if (activeIncidents) {
+        nearbyIncident = activeIncidents.find((inc: any) => {
+            const dist = getDistanceFromLatLonInM(inc.lat, inc.lng, location.lat, location.lng);
+            return dist <= MERGE_RADIUS_METERS;
+        });
+    }
+
+    // 2. MERGE IF EXISTS
+    if (nearbyIncident) {
+        const reporters = nearbyIncident.reporters || [nearbyIncident.reporter_id];
+        if (!reporters.includes(user.uid)) {
+             const newReporters = [...reporters, user.uid];
+             const newCount = (nearbyIncident.report_count || 1) + 1;
+             const newScore = Math.min(100, (nearbyIncident.reliability_score || 50) + 15);
+             
+             const { data: updated } = await supabase
+                .from('incidents')
+                .update({ 
+                    report_count: newCount,
+                    reporters: newReporters,
+                    reliability_score: newScore,
+                    timestamp: Date.now() // Bump timestamp
+                })
+                .eq('id', nearbyIncident.id)
+                .select()
+                .single();
+
+             if (updated) {
+                 await this.logActivity(user.uid, 'REPORT', `Signalement fusionné: ${type}`, updated.id);
+                 return this.mapDbToIncident(updated);
+             }
+        }
+        return this.mapDbToIncident(nearbyIncident);
+    }
+
+    // 3. CREATE NEW
     const isSentinel = user.role === UserRole.SENTINELLE;
     const initialStatus = isSentinel ? IncidentStatus.VALIDE : IncidentStatus.EN_ATTENTE;
     const validatedBy = isSentinel ? user.uid : null;
 
-    const newIncident = {
-        type: incidentData.type || IncidentType.AUTRE,
+    const newIncidentPayload = {
+        type: type,
         description: incidentData.description || '',
         lat: location.lat,
         lng: location.lng,
@@ -272,132 +236,143 @@ class SupabaseService implements DatabaseService {
         report_count: 1,
         reporters: [user.uid]
     };
-    const { data, error } = await supabase.from('incidents').insert(newIncident).select().single();
+
+    const { data: created, error } = await supabase.from('incidents').insert(newIncidentPayload).select().single();
     if (error) throw error;
 
-    await this.logActivity(user.uid, 'REPORT', `Signalement: ${incidentData.type} (Statut: ${initialStatus})`, data.id);
-    
-    // Notification Logic
-    try {
-        const title = isSentinel ? "Alerte Sentinelle" : "Nouvel Incident";
-        const message = isSentinel 
-            ? `Une sentinelle a signalé et validé un incident : ${incidentData.type}`
-            : `Un incident (${incidentData.type}) a été signalé.`;
-        
-        // If Validated (Sentinel), send ALERT (Danger confirmed). If Waiting (Citoyen), send ACTION (Need verification).
-        const type = isSentinel ? NotificationType.ALERT : NotificationType.ACTION;
+    const actionType = type === IncidentType.SOS ? 'SOS' : 'REPORT';
+    await this.logActivity(user.uid, actionType, `Nouveau signalement: ${type}`, created.id);
 
-        await supabase.from('notifications').insert({
-            user_id: 'ALL',
-            title: title,
-            message: message,
-            type: type,
-            timestamp: Date.now(),
-            related_incident_id: data.id
-        });
-    } catch (e) { console.warn(e); }
+    // Create Notification
+    await supabase.from('notifications').insert({
+        user_id: 'ALL',
+        title: isSentinel ? "Alerte Sentinelle" : "Nouvel Incident",
+        message: `Nouveau signalement : ${type}`,
+        type: isSentinel ? NotificationType.ALERT : NotificationType.ACTION,
+        timestamp: Date.now(),
+        related_incident_id: created.id
+    });
 
-    return this.mapDbToIncident(data);
+    return this.mapDbToIncident(created);
   }
 
-  async voteIncident(incidentId: string, userId: string, voteType: 'like' | 'dislike') {
-    const { data: current } = await supabase.from('incidents').select('likes, dislikes, reliability_score').eq('id', incidentId).single();
-    if (!current) throw new Error("Incident non trouvé");
+  async voteIncident(incidentId: string, userId: string, voteType: 'like' | 'dislike'): Promise<Incident> {
+    // Fetch current state
+    const { data: current, error } = await supabase.from('incidents').select('likes, dislikes, reliability_score, status').eq('id', incidentId).single();
+    if (error || !current) throw new Error("Incident introuvable");
 
     let likes = current.likes || [];
     let dislikes = current.dislikes || [];
     let score = current.reliability_score;
-    
+
+    // Remove existing vote
     likes = likes.filter((id: string) => id !== userId);
     dislikes = dislikes.filter((id: string) => id !== userId);
-    
-    if (voteType === 'like') { 
-        likes.push(userId); 
-        score = Math.min(100, score + 10); 
-    } else { 
-        dislikes.push(userId); 
-        score = Math.max(0, score - 15); 
-    }
-    
-    const { data: updated, error } = await supabase.from('incidents')
-        .update({ likes, dislikes, reliability_score: score })
-        .eq('id', incidentId)
-        .select()
-        .single();
-        
-    if (error) throw error;
-    await this.logActivity(userId, 'VOTE', `Vote ${voteType} sur incident`, incidentId);
-    return this.mapDbToIncident(updated);
-  }
 
-  async updateIncidentStatus(incidentId: string, status: IncidentStatus, validatorId?: string) {
-    const updatePayload: any = { status };
-    if (validatorId) updatePayload.validated_by = validatorId;
+    // Add new vote
+    if (voteType === 'like') {
+        likes.push(userId);
+        score = Math.min(100, score + 10);
+    } else {
+        dislikes.push(userId);
+        score = Math.max(0, score - 15);
+    }
+
+    // Update DB
+    const updatePayload: any = { likes, dislikes, reliability_score: score };
     
-    const { data: updated, error } = await supabase.from('incidents')
-        .update(updatePayload)
-        .eq('id', incidentId)
-        .select()
-        .single();
-        
-    if (error) throw error;
+    // Auto validate logic
+    if (likes.length >= 3 && current.status === IncidentStatus.EN_ATTENTE) {
+        updatePayload.status = IncidentStatus.VALIDE;
+        updatePayload.validated_by = 'SYSTEM_AUTO';
+    }
+
+    const { data: updated } = await supabase.from('incidents').update(updatePayload).eq('id', incidentId).select().single();
     
-    if (validatorId) await this.logActivity(validatorId, 'VALIDATE', `Statut mis à jour: ${status}`, incidentId);
+    await this.logActivity(userId, 'VOTE', `Vote ${voteType}`, incidentId);
     
     return this.mapDbToIncident(updated);
   }
 
-  async getNotifications(userId: string) {
-    try {
-        const { data, error } = await supabase.from('notifications')
-            .select('*')
-            .or(`user_id.eq.${userId},user_id.eq.ALL`)
-            .order('timestamp', { ascending: false })
-            .limit(20);
+  async updateIncidentStatus(incidentId: string, status: IncidentStatus, validatorId?: string): Promise<Incident> {
+    const payload: any = { status };
+    if (validatorId) payload.validated_by = validatorId;
 
-        if (error) return [];
-            
-        return (data || []).map(n => ({
-            id: n.id,
-            userId: n.user_id,
-            title: n.title,
-            message: n.message,
-            type: n.type as NotificationType,
-            read: n.read,
-            timestamp: Number(n.timestamp),
-            relatedIncidentId: n.related_incident_id
-        }));
-    } catch (e: any) {
-        if (isAbortError(e)) return [];
-        return [];
+    const { data: updated, error } = await supabase.from('incidents').update(payload).eq('id', incidentId).select().single();
+    if (error) throw error;
+
+    if (validatorId) {
+        let action: ActivityAction = 'VALIDATE';
+        if (status === IncidentStatus.REJETE) action = 'REJECT';
+        if (status === IncidentStatus.RESOLU) action = 'RESOLVE';
+        await this.logActivity(validatorId, action, `Statut mis à jour: ${status}`, incidentId);
     }
+
+    return this.mapDbToIncident(updated);
   }
 
-  async markNotificationRead(notifId: string) {
+  async getNotifications(userId: string): Promise<Notification[]> {
+    const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .or(`user_id.eq.${userId},user_id.eq.ALL`)
+        .order('timestamp', { ascending: false })
+        .limit(50);
+        
+    return (data || []).map(n => ({
+        id: n.id,
+        userId: n.user_id,
+        title: n.title,
+        message: n.message,
+        type: n.type as NotificationType,
+        read: n.read,
+        timestamp: n.timestamp,
+        relatedIncidentId: n.related_incident_id
+    }));
+  }
+
+  async markNotificationRead(notifId: string): Promise<void> {
+    await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+  }
+
+  async uploadMedia(file: File): Promise<string | null> {
     try {
-        await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `${fileName}`;
+        
+        // Ensure bucket exists called 'incidents' or 'media' in Supabase Storage
+        const { error: uploadError } = await supabase.storage
+            .from('incidents')
+            .upload(filePath, file);
+
+        if (uploadError) {
+            console.error("Upload error:", uploadError);
+            return null;
+        }
+
+        const { data } = supabase.storage.from('incidents').getPublicUrl(filePath);
+        return data.publicUrl;
     } catch (e) {
-        if (!isAbortError(e)) console.error(e);
+        console.error("Exception uploading media", e);
+        return null;
     }
   }
 
-  async sendPromotionInvite(userId: string) {
-    try {
-        await supabase.from('notifications').insert({
-            user_id: userId,
-            title: "Promotion Sentinelle",
-            message: "L'administration souhaite vous promouvoir au rang de Sentinelle. Acceptez-vous cette responsabilité ?",
-            type: NotificationType.PROMOTION,
-            timestamp: Date.now(),
-            read: false
-        });
-    } catch (e) {
-        if (!isAbortError(e)) console.error(e);
-    }
+  async sendPromotionInvite(userId: string): Promise<void> {
+     await supabase.from('notifications').insert({
+         user_id: userId,
+         title: "Promotion Sentinelle",
+         message: "L'administration souhaite vous promouvoir au rang de Sentinelle.",
+         type: NotificationType.PROMOTION,
+         timestamp: Date.now()
+     });
   }
 
-  parseIncident(d: any): Incident {
-      return this.mapDbToIncident(d);
+  // --- MAPPERS ---
+  
+  parseIncident(data: any): Incident {
+      return this.mapDbToIncident(data);
   }
 
   private mapProfileToUser(p: any): User {
@@ -434,5 +409,4 @@ class SupabaseService implements DatabaseService {
   }
 }
 
-// EXPORT THE REAL SERVICE
 export const db: DatabaseService = new SupabaseService();
