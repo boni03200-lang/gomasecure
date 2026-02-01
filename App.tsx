@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { MapView } from './components/MapView';
@@ -9,9 +10,9 @@ import { AuthView } from './components/AuthView';
 import { NotificationPanel } from './components/NotificationPanel';
 import { UserProfile } from './components/UserProfile';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
-import { db, supabase } from './services/supabase'; // Switched to Real Backend
+import { db, supabase } from './services/supabase'; 
 import { User, Incident, TabView, UserRole, IncidentType, IncidentStatus, Notification } from './types';
-import { GOMA_CENTER, SOS_MESSAGE_TEMPLATE } from './constants';
+import { GOMA_CENTER, SOS_MESSAGE_TEMPLATE, INCIDENT_VISIBILITY_RADIUS } from './constants';
 import { CheckCircle, AlertCircle, X, Info } from 'lucide-react';
 
 const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error' | 'info', onClose: () => void }) => {
@@ -31,15 +32,13 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
   );
 };
 
-// Helper locally to catch AbortErrors if not thrown by service
 const isAbortError = (e: any) => {
     const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : '');
     return e?.name === 'AbortError' || msg.includes('aborted') || msg.includes('signal is aborted');
 };
 
-// Geolocation Distance Helper
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371e3; // Radius of the earth in km
+  const R = 6371e3; 
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
@@ -47,7 +46,7 @@ function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const d = R * c; // Distance in meters
+  const d = R * c; 
   return d;
 }
 
@@ -59,12 +58,10 @@ const AppContent = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeTab, setActiveTab] = useState<TabView>('MAP');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Added accuracy to state
+  
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number, accuracy?: number} | null>(null);
   const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
-  
-  // Toast State
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -75,42 +72,36 @@ const AppContent = () => {
   const publicIncidents = useMemo(() => {
     if (!user) return [];
 
-    // ADMIN: Sees All Incidents (including SOS) regardless of location
     if (user.role === UserRole.ADMINISTRATEUR) {
         return incidents;
     }
 
-    // STANDARD USERS (Citoyen/Sentinelle):
-    // 1. SOS is hidden (unless they reported it? adhering to "Standard users see everything EXCEPT SOS")
-    // 2. Proximity Rule: Only within 200m radius
     return incidents.filter(inc => {
-        // Hide SOS
-        if (inc.type === IncidentType.SOS) return false;
-
+        // Only show incidents resolved or validated, OR created by me
+        // OR pending incidents nearby
+        if (inc.status === IncidentStatus.REJETE && inc.reporterId !== user.uid) return false;
+        
         // Always show own reports
         if (inc.reporterId === user.uid) return true;
 
-        // Distance Check (200m)
-        if (!userLocation) return false; // If GPS is off/loading, don't show distant incidents
+        if (!userLocation) return false;
 
         const dist = getDistanceFromLatLonInM(
             userLocation.lat, userLocation.lng,
             inc.location.lat, inc.location.lng
         );
 
-        return dist <= 200;
+        // Show broadly (5km) for situational awareness, 
+        // BUT interaction will be limited by INCIDENT_VISIBILITY_RADIUS in the Card component
+        return dist <= 5000; 
     });
   }, [incidents, user, userLocation]);
 
-  // Admins see EVERYTHING (passed directly to AdminDashboard via 'incidents' state)
-
-  // Initial Data Load
   useEffect(() => {
     const initData = async () => {
       try {
         const incs = await db.getIncidents();
         setIncidents(incs);
-
         const usrs = await db.getAllUsers();
         setUsers(usrs);
       } catch (e: any) {
@@ -120,13 +111,16 @@ const AppContent = () => {
       }
     };
 
-    // Geolocation with Watch for High Accuracy
     let watchId: number;
     if (navigator.geolocation) {
        watchId = navigator.geolocation.watchPosition(
           (pos) => {
-             // Update location continuously for better accuracy
-             // Capture accuracy metric
+             // Basic Mock Location Heuristic:
+             // If accuracy is exactly 0 or null on some older androids, it's often a mock provider.
+             // Real GPS usually has at least 3-5m variance.
+             // Note: In modern browsers, mock providers can set arbitrary accuracy.
+             // We rely on "Reasonable Accuracy" here.
+             
              setUserLocation({ 
                  lat: pos.coords.latitude, 
                  lng: pos.coords.longitude,
@@ -134,14 +128,12 @@ const AppContent = () => {
              });
           },
           (err) => {
-             console.warn("GPS failed, using default center", err);
-             // Only set default if we don't have a location yet
-             setUserLocation(prev => prev || GOMA_CENTER);
+             console.warn("GPS failed", err);
           },
           { 
              enableHighAccuracy: true, 
              timeout: 10000, 
-             maximumAge: 0 // Force fresh location, no caching for realism
+             maximumAge: 0 
           }
        );
     } else {
@@ -155,25 +147,20 @@ const AppContent = () => {
     };
   }, []);
 
-  // Real-time Subscriptions (Incidents)
   useEffect(() => {
       const channel = supabase.channel('realtime_updates')
         .on(
             'postgres_changes', 
             { event: '*', schema: 'public', table: 'incidents' }, 
             (payload) => {
-                // Direct Payload Handling for Instant Updates
                 if (payload.eventType === 'INSERT') {
                     const newInc = db.parseIncident(payload.new);
                     setIncidents(prev => {
-                        // Prevent duplicates if optimistic update already added it
                         if (prev.some(i => i.id === newInc.id)) return prev;
-                        // ADD NEW INCIDENT AND SORT
                         const newList = [newInc, ...prev];
                         return newList.sort((a, b) => b.timestamp - a.timestamp);
                     });
                     
-                    // Alert sound for admin if SOS or critical
                     if ((newInc.type === IncidentType.SOS || newInc.type === IncidentType.AGRESSION) && user?.role === UserRole.ADMINISTRATEUR) {
                         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
                         audio.play().catch(e => console.log('Audio autoplay blocked'));
@@ -200,12 +187,9 @@ const AppContent = () => {
       };
   }, [user]);
 
-  // Poll Notifications (and fallback for data)
   useEffect(() => {
       if (!user) return;
-      
       let isMounted = true;
-
       const fetchNotifs = async () => {
           try {
               const notifs = await db.getNotifications(user.uid);
@@ -218,11 +202,7 @@ const AppContent = () => {
               }
           }
       };
-
-      // Initial fetch
       fetchNotifs();
-      
-      // Also subscribe to notifications for this user
       const notifChannel = supabase.channel(`notifications:${user.uid}`)
         .on(
             'postgres_changes',
@@ -233,9 +213,7 @@ const AppContent = () => {
             }
         )
         .subscribe();
-
-      const interval = setInterval(fetchNotifs, 10000); // Poll less frequently since we have realtime
-      
+      const interval = setInterval(fetchNotifs, 10000);
       return () => {
           isMounted = false;
           clearInterval(interval);
@@ -246,15 +224,17 @@ const AppContent = () => {
   const handleCreateIncident = async (data: { type: IncidentType, description: string, media?: File }) => {
     if (!user) return;
     
-    // STRICT Location Check
+    // 1. Check GPS Presence
     if (!userLocation) {
-        showToast("Localisation GPS requise pour signaler. Attendez l'acquisition...", "error");
+        showToast("Acquisition GPS en cours... Veuillez patienter.", "error");
         return;
     }
 
-    // STRICT Accuracy Check (Must be better than 100 meters)
+    // 2. Anti-Spoofing Check (Accuracy)
+    // Real GPS signals usually have some noise (5m-20m). 
+    // If accuracy > 100m, it's too vague or potentially spoofed/poor quality.
     if (userLocation.accuracy && userLocation.accuracy > 100) {
-        showToast(`Signal GPS trop faible (Précision: ±${Math.round(userLocation.accuracy)}m). Rapprochez-vous de l'extérieur.`, 'error');
+        showToast(`Signal GPS trop faible (±${Math.round(userLocation.accuracy)}m). Déplacez-vous à ciel ouvert.`, 'error');
         return;
     }
 
@@ -268,30 +248,24 @@ const AppContent = () => {
 
     try {
       let finalMediaUrl: string | undefined = undefined;
-
-      // Upload Media to Storage for Real-Time Access
       if (data.media) {
           showToast("Téléchargement du média...", "info");
           const uploadedUrl = await db.uploadMedia(data.media);
-          
           if (uploadedUrl) {
               finalMediaUrl = uploadedUrl;
           } else {
-              // FAIL SAFE: Do NOT use local URL for DB as others can't see it.
-              console.warn("Upload failed");
-              showToast("Echec upload média. Signalement envoyé sans média.", "error");
+              showToast("Echec upload média.", "error");
               finalMediaUrl = undefined;
           }
       }
 
       const resultIncident = await db.createIncident({
         ...data,
-        location: userLocation, // Use strict user location
+        location: userLocation,
         mediaUrl: finalMediaUrl, 
         mediaType: mediaType
       }, user);
 
-      // Optimistic update
       setIncidents(prev => {
           const list = [resultIncident, ...prev];
           return list.sort((a, b) => b.timestamp - a.timestamp);
@@ -302,7 +276,6 @@ const AppContent = () => {
       showToast('Incident signalé avec succès', 'success');
     } catch (e: any) {
       if (!isAbortError(e)) {
-          console.error(e);
           showToast("Erreur lors de l'envoi", 'error');
       }
       setIsSubmitting(false);
@@ -311,223 +284,177 @@ const AppContent = () => {
 
   const handleVote = async (id: string, type: 'like' | 'dislike') => {
     if (!user) return;
-    try {
-        const updated = await db.voteIncident(id, user.uid, type);
-        setIncidents(prev => prev.map(i => i.id === id ? updated : i));
-        showToast('Vote enregistré', 'success');
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error(e);
-    }
-  };
 
-  const handleValidate = async (id: string, isValid: boolean) => {
-    if (!user) return;
-    try {
-        const updated = await db.updateIncidentStatus(id, isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE, user.uid);
+    // Strict Server-Side Validation Simulation
+    // In a real app, the server would calculate distance. 
+    // Here we check client-side again before sending.
+    const incident = incidents.find(i => i.id === id);
+    if (incident && userLocation) {
+        const dist = getDistanceFromLatLonInM(userLocation.lat, userLocation.lng, incident.location.lat, incident.location.lng);
+        const maxRadius = INCIDENT_VISIBILITY_RADIUS[incident.type] || 200;
         
-        // Manual update to ensure UI responsiveness (fixes "Status doesn't change" bug)
-        setIncidents(prev => prev.map(i => i.id === id ? updated : i));
-        
-        showToast(isValid ? 'Incident validé' : 'Incident rejeté', isValid ? 'success' : 'info');
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error(e);
+        if (dist > maxRadius) {
+            showToast(`Trop loin ! (Rayon max: ${maxRadius}m)`, 'error');
+            return;
+        }
     }
-  };
-  
-  const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
-      if(!user) return;
-      try {
-          // 1. Optimistic Update Local State
-          setIncidents(prev => prev.map(i => {
-              if (i.id === id) {
-                  return { ...i, status: status, validatedBy: user.uid };
-              }
-              return i;
-          }));
 
-          // 2. Call DB
-          const updated = await db.updateIncidentStatus(id, status, user.uid);
-          
-          // 3. Confirm with DB result (optional, but good for consistency)
-          setIncidents(prev => prev.map(i => i.id === id ? updated : i));
-          
-          showToast(`Statut mis à jour : ${status}`, 'success');
-      } catch (e: any) {
-          if (!isAbortError(e)) {
-              console.error(e);
-              showToast("Erreur de mise à jour", 'error');
-          }
+    try {
+      const updated = await db.voteIncident(id, user.uid, type);
+      setIncidents(prev => prev.map(i => i.id === id ? updated : i));
+      showToast('Vote enregistré', 'success');
+    } catch (e: any) {
+      if (!isAbortError(e)) {
+          showToast('Erreur lors du vote', 'error');
       }
+    }
   };
 
   const handleSOS = async () => {
-    if (!user) return;
-    const loc = userLocation || GOMA_CENTER; 
-
-    try {
-        const newSOS = await db.createIncident({
-            type: IncidentType.SOS,
-            description: SOS_MESSAGE_TEMPLATE,
-            location: loc
-        }, user);
-        
-        // Immediate optimistic add for SOS user (Admin will get it via subscription)
-        setIncidents(prev => [newSOS, ...prev]);
-        
-        showToast('Alerte SOS transmise !', 'error');
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error(e);
+    if (!userLocation) {
+        showToast("GPS requis pour SOS", "error");
+        return;
     }
+    await handleCreateIncident({
+        type: IncidentType.SOS,
+        description: SOS_MESSAGE_TEMPLATE
+    });
   };
 
-  const markNotificationRead = async (id: string) => {
-     try {
-         await db.markNotificationRead(id);
-         setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-     } catch (e: any) {
-         if (!isAbortError(e)) console.error(e);
-     }
-  };
+  const renderContent = () => {
+    if (!user) {
+        return <AuthView onLogin={setUser} showToast={showToast} />;
+    }
 
-  const markAllRead = async () => {
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      try {
-          const unread = notifications.filter(n => !n.read);
-          await Promise.all(unread.map(n => db.markNotificationRead(n.id)));
-      } catch (e: any) {
-          if (!isAbortError(e)) console.error(e);
-      }
-  };
-
-  const handleNotificationNavigate = (incidentId: string) => {
-      const incident = incidents.find(i => i.id === incidentId);
-      if (incident) {
-          setSelectedIncidentId(incident.id);
-          setActiveTab('MAP');
-          setIsNotificationPanelOpen(false);
-          // Small timeout to allow MapView to mount and receive the ID
-          setTimeout(() => setSelectedIncidentId(null), 3000); 
-      }
-  };
-
-  const handlePromotionResponse = async (notifId: string, accept: boolean) => {
-      if (!user) return;
-      try {
-          // 1. Mark notification as read
-          await markNotificationRead(notifId);
-          
-          if (accept) {
-              // 2. Update Role in DB
-              await db.updateUserRole(user.uid, UserRole.SENTINELLE);
-              // 3. Update Local User State
-              setUser({ ...user, role: UserRole.SENTINELLE });
-              showToast("Félicitations ! Vous êtes maintenant Sentinelle.", 'success');
-          } else {
-              showToast("Promotion refusée.", 'info');
-          }
-      } catch (e: any) {
-          if (!isAbortError(e)) {
-              console.error(e);
-              showToast("Erreur lors de la mise à jour.", 'error');
-          }
-      }
-  };
-
-  if (!user) {
-    return <AuthView onLogin={setUser} showToast={showToast} />;
-  }
-
-  if (activeTab === 'PROFILE' && user.role === UserRole.ADMINISTRATEUR) {
-      return (
-          <>
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+    if (user.role === UserRole.ADMINISTRATEUR) {
+        return (
             <AdminDashboard 
-              user={user} 
-              incidents={incidents} // Admins see ALL incidents including SOS
-              onLogout={() => setUser(null)} 
-              onUpdateStatus={handleUpdateStatus}
-              notifications={notifications} 
+                user={user} 
+                incidents={incidents} 
+                onLogout={() => setUser(null)} 
+                onUpdateStatus={async (id, status) => {
+                    await db.updateIncidentStatus(id, status, user.uid);
+                    showToast('Statut mis à jour', 'success');
+                }}
+                notifications={notifications}
             />
-          </>
-      );
-  }
+        );
+    }
+
+    if (activeTab === 'SOS') {
+        return <PanicButton onTrigger={handleSOS} />;
+    }
+
+    return (
+        <Layout 
+           activeTab={activeTab} 
+           onTabChange={setActiveTab} 
+           userRole={user.role} 
+           unreadCount={notifications.filter(n => !n.read).length}
+           onNotificationClick={() => setIsNotificationPanelOpen(true)}
+        >
+          {activeTab === 'MAP' && (
+            <div className="h-full relative">
+                <MapView 
+                  incidents={publicIncidents} 
+                  currentUser={user}
+                  onIncidentClick={(inc) => {
+                      setSelectedIncidentId(inc.id);
+                      setActiveTab('LIST');
+                  }}
+                  onMapClick={() => setSelectedIncidentId(null)}
+                  userLocation={userLocation}
+                  highlightedId={selectedIncidentId}
+                />
+            </div>
+          )}
+
+          {activeTab === 'LIST' && (
+             <div className="h-full bg-gray-50 overflow-y-auto px-4 py-4 space-y-4">
+                 <h2 className="text-xl font-black text-gray-900 mb-2 px-2">Fil d'actualité</h2>
+                 {publicIncidents.map(inc => (
+                    <IncidentCard 
+                        key={inc.id} 
+                        incident={inc} 
+                        currentUser={user} 
+                        onVote={handleVote} 
+                        onValidate={async (id, isValid) => {
+                           const status = isValid ? IncidentStatus.VALIDE : IncidentStatus.REJETE;
+                           await db.updateIncidentStatus(id, status, user.uid);
+                        }}
+                        distance={userLocation ? getDistanceFromLatLonInM(userLocation.lat, userLocation.lng, inc.location.lat, inc.location.lng) : undefined}
+                        domId={inc.id === selectedIncidentId ? `incident-${inc.id}` : undefined}
+                        className={inc.id === selectedIncidentId ? 'ring-2 ring-blue-500' : ''}
+                    />
+                 ))}
+                 {publicIncidents.length === 0 && (
+                     <div className="text-center py-20 text-gray-400">
+                         <p>Aucun incident à proximité.</p>
+                     </div>
+                 )}
+             </div>
+          )}
+
+          {activeTab === 'REPORT' && (
+            <IncidentForm 
+                onSubmit={handleCreateIncident} 
+                onCancel={() => setActiveTab('MAP')} 
+                isSubmitting={isSubmitting}
+                userLocation={userLocation}
+            />
+          )}
+
+          {activeTab === 'PROFILE' && (
+             <UserProfile 
+                user={user} 
+                incidents={incidents} 
+                onLogout={() => setUser(null)}
+                onLanguageChange={() => setLanguage(language === 'fr' ? 'sw' : 'fr')}
+                onToggleNotifications={() => {}}
+             />
+          )}
+
+          {selectedIncidentId && activeTab === 'LIST' && (() => {
+               // Auto-scroll to selected incident logic via generic DOM manipulation if needed
+               setTimeout(() => {
+                   const el = document.getElementById(`incident-${selectedIncidentId}`);
+                   if(el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+               }, 100);
+               return null;
+          })()}
+
+          <NotificationPanel 
+             isOpen={isNotificationPanelOpen}
+             onClose={() => setIsNotificationPanelOpen(false)}
+             notifications={notifications}
+             onMarkRead={(id) => db.markNotificationRead(id)}
+             onMarkAllRead={() => {
+                 notifications.forEach(n => !n.read && db.markNotificationRead(n.id));
+                 setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+             }}
+             onNavigate={(id) => {
+                 setSelectedIncidentId(id);
+                 setActiveTab('LIST');
+                 setIsNotificationPanelOpen(false);
+             }}
+             onPromotionResponse={async (notifId, accept) => {
+                 if (accept) {
+                     await db.updateUserRole(user.uid, UserRole.SENTINELLE);
+                     setUser(prev => prev ? ({ ...prev, role: UserRole.SENTINELLE }) : null);
+                     showToast("Félicitations! Vous êtes maintenant Sentinelle.", "success");
+                 }
+                 await db.markNotificationRead(notifId);
+             }}
+          />
+        </Layout>
+    );
+  };
 
   return (
-    <Layout 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab} 
-        userRole={user.role} 
-        unreadCount={notifications.filter(n => !n.read).length}
-        onNotificationClick={() => setIsNotificationPanelOpen(true)}
-    >
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      
-      <NotificationPanel 
-        isOpen={isNotificationPanelOpen} 
-        onClose={() => setIsNotificationPanelOpen(false)}
-        notifications={notifications}
-        onMarkRead={markNotificationRead}
-        onMarkAllRead={markAllRead}
-        onNavigate={handleNotificationNavigate}
-        onPromotionResponse={handlePromotionResponse}
-      />
-
-      {activeTab === 'MAP' && (
-        <MapView 
-          incidents={publicIncidents} // Non-admins only see public incidents (No SOS)
-          currentUser={user} 
-          onIncidentClick={(inc) => {
-             setActiveTab('LIST');
-          }} 
-          userLocation={userLocation}
-          highlightedId={selectedIncidentId}
-          selectedId={selectedIncidentId}
-        />
-      )}
-      
-      {activeTab === 'LIST' && (
-        <div className="h-full overflow-y-auto p-4 pt-16 bg-gray-100 space-y-4">
-          {publicIncidents.map(inc => {
-            const dist = userLocation ? getDistanceFromLatLonInM(userLocation.lat, userLocation.lng, inc.location.lat, inc.location.lng) : undefined;
-            return (
-              <IncidentCard 
-                key={inc.id} 
-                incident={inc} 
-                currentUser={user} 
-                onVote={handleVote} 
-                onValidate={handleValidate}
-                distance={dist}
-                className={selectedIncidentId === inc.id ? 'ring-4 ring-blue-500 ring-opacity-50' : ''}
-                domId={inc.id}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {activeTab === 'REPORT' && (
-        <IncidentForm 
-            onSubmit={handleCreateIncident} 
-            onCancel={() => setActiveTab('MAP')} 
-            isSubmitting={isSubmitting}
-            userLocation={userLocation}
-        />
-      )}
-
-      {activeTab === 'SOS' && (
-        <PanicButton onTrigger={handleSOS} />
-      )}
-
-      {activeTab === 'PROFILE' && (
-          <UserProfile 
-             user={user} 
-             incidents={publicIncidents} 
-             onLogout={() => setUser(null)}
-             onLanguageChange={() => setLanguage(language === 'fr' ? 'sw' : 'fr')}
-             onToggleNotifications={() => {}}
-          />
-      )}
-    </Layout>
+      <>
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        {renderContent()}
+      </>
   );
 };
 

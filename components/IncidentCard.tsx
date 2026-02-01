@@ -1,9 +1,11 @@
+
 import React from 'react';
-import { Incident, IncidentStatus, User, UserRole } from '../types';
-import { ThumbsUp, ThumbsDown, Check, X, Clock, MapPin, FileAudio, Image as ImageIcon, Video, Shield, Activity, User as UserIcon, Users } from 'lucide-react';
+import { Incident, IncidentStatus, User, UserRole, IncidentType } from '../types';
+import { ThumbsUp, ThumbsDown, Check, X, Clock, MapPin, FileAudio, Image as ImageIcon, Video, Shield, Activity, User as UserIcon, Users, AlertTriangle, Eye } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useLanguage } from '../contexts/LanguageContext';
+import { INCIDENT_VISIBILITY_RADIUS, DANGEROUS_INCIDENTS, DANGER_RADIUS } from '../constants';
 
 interface IncidentCardProps {
   incident: Incident;
@@ -30,7 +32,14 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
   const isSentinel = currentUser.role === UserRole.SENTINELLE;
   const isReporter = currentUser.uid === incident.reporterId;
   const hasVoted = incident.likes.includes(currentUser.uid) || incident.dislikes.includes(currentUser.uid);
-  const isNearby = distance !== undefined && distance <= 100;
+  
+  // ADAPTIVE RADIUS LOGIC
+  const visibilityRadius = INCIDENT_VISIBILITY_RADIUS[incident.type] || 200;
+  const canVote = distance !== undefined && distance <= visibilityRadius;
+  
+  // DANGER LOGIC
+  const isDangerous = DANGEROUS_INCIDENTS.includes(incident.type);
+  const isInDangerZone = distance !== undefined && isDangerous && distance < DANGER_RADIUS;
 
   const getStatusColor = (status: IncidentStatus) => {
     switch (status) {
@@ -90,8 +99,15 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
   return (
     <div 
       id={domId} 
-      className={`bg-white rounded-2xl shadow-[0_2px_15px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden ${className} ${!className.includes('p-') ? (compact ? 'p-3' : 'p-5 mb-4') : ''}`}
+      className={`bg-white rounded-2xl shadow-[0_2px_15px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden ${className} ${!className.includes('p-') ? (compact ? 'p-3' : 'p-5 mb-4') : ''} ${isInDangerZone ? 'ring-2 ring-red-500 ring-offset-2' : ''}`}
     >
+      {/* Safety Warning Header */}
+      {isInDangerZone && !compact && (
+          <div className="bg-red-50 text-red-700 p-2 text-xs font-bold flex items-center justify-center border-b border-red-100 mb-3 rounded-lg animate-pulse">
+              <AlertTriangle className="w-4 h-4 mr-2" /> ZONE DE DANGER : ÉLOIGNEZ-VOUS !
+          </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-start">
@@ -115,8 +131,8 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
               <div className="flex items-center mt-1 space-x-3 text-xs text-gray-400 font-medium">
                  <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {formatDistanceToNow(incident.timestamp, { addSuffix: true, locale: fr })}</span>
                  {distance !== undefined && (
-                   <span className={`flex items-center ${isNearby ? 'text-green-600' : ''}`}>
-                     <MapPin className="w-3 h-3 mr-1" /> {Math.round(distance)}m
+                   <span className={`flex items-center ${canVote ? 'text-green-600' : ''}`}>
+                     <MapPin className="w-3 h-3 mr-1" /> {distance < 1000 ? `${Math.round(distance)}m` : `${(distance/1000).toFixed(1)}km`}
                    </span>
                  )}
               </div>
@@ -180,36 +196,46 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
               </button>
             </div>
           ) : isReporter ? (
-             /* REPORTER STATUS VIEW (No Voting on own report) */
+             /* REPORTER STATUS VIEW */
              <div className="text-center py-3 bg-blue-50/50 rounded-xl border border-blue-100 flex flex-col items-center justify-center">
                 <span className="text-xs text-blue-800 font-bold mb-0.5">{t('your_report')}</span>
                 <span className="text-[10px] text-blue-600">{t('wait_confirmation')}</span>
              </div>
           ) : (
-             /* CITIZEN VOTING ACTIONS */
-             isNearby && !hasVoted ? (
-              <div className="grid grid-cols-2 gap-3">
-                <button 
-                  onClick={() => onVote(incident.id, 'like')}
-                  className="flex items-center justify-center py-2.5 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl text-sm font-bold transition-all active:scale-95"
-                >
-                  <ThumbsUp className="w-4 h-4 mr-2" /> {t('vote_true')}
-                </button>
-                <button 
-                  onClick={() => onVote(incident.id, 'dislike')}
-                  className="flex items-center justify-center py-2.5 bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 rounded-xl text-sm font-bold transition-all active:scale-95"
-                >
-                  <ThumbsDown className="w-4 h-4 mr-2" /> {t('vote_false')}
-                </button>
-              </div>
-             ) : !isNearby ? (
+             /* CITIZEN VOTING ACTIONS (WITH ADAPTIVE RADIUS) */
+             canVote && !hasVoted ? (
+              <>
+                 {/* Visual Confirmation Message for Long Distance */}
+                 {distance && distance > 200 && (
+                     <div className="text-xs text-blue-600 mb-2 flex items-center justify-center">
+                         <Eye className="w-3 h-3 mr-1" /> Confirmation visuelle à distance autorisée
+                     </div>
+                 )}
+                 <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={() => onVote(incident.id, 'like')}
+                      className="flex items-center justify-center py-2.5 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl text-sm font-bold transition-all active:scale-95"
+                    >
+                      <ThumbsUp className="w-4 h-4 mr-2" /> {t('vote_true')}
+                    </button>
+                    <button 
+                      onClick={() => onVote(incident.id, 'dislike')}
+                      className="flex items-center justify-center py-2.5 bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 rounded-xl text-sm font-bold transition-all active:scale-95"
+                    >
+                      <ThumbsDown className="w-4 h-4 mr-2" /> {t('vote_false')}
+                    </button>
+                  </div>
+              </>
+             ) : !canVote ? (
                 <div className="text-center py-2 bg-gray-50 rounded-lg border border-gray-100">
-                    <span className="text-xs text-gray-400 font-medium italic">{t('too_far')}</span>
+                    <span className="text-xs text-gray-400 font-medium italic flex items-center justify-center">
+                        <MapPin className="w-3 h-3 mr-1" />
+                        {t('too_far')} (> {visibilityRadius}m)
+                    </span>
                 </div>
              ) : (
                 <div className="flex items-center justify-center py-2 bg-green-50 rounded-lg text-green-700 text-xs font-bold border border-green-100">
-                    <Shield className="w-3 h-3 mr-2" />
-                    {t('thanks_vote')}
+                    <Shield className="w-4 h-4 mr-1.5" /> {t('thanks_vote')}
                 </div>
              )
           )}
