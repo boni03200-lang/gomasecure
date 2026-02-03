@@ -48,6 +48,7 @@ export interface Incident {
     lat: number;
     lng: number;
   };
+  address?: string; // Human readable address from Reverse Geocoding
   timestamp: number;
   reporterId: string;
   mediaUrl?: string; // Photo/Audio/Video

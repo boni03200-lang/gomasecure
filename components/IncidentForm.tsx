@@ -19,6 +19,7 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
   const [description, setDescription] = useState('');
   const [media, setMedia] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [resolvedAddress, setResolvedAddress] = useState<string>("Chargement de l'adresse...");
   
   // Audio Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -37,14 +38,12 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<any>(null);
   
-  // Video specific refs
   const videoRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<Blob[]>([]);
   
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Cleanup effect
   useEffect(() => {
     return () => {
       if (audioPlayerRef.current) {
@@ -58,13 +57,32 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
     };
   }, []); 
 
+  // Address lookup effect
+  useEffect(() => {
+    if (userLocation) {
+        const fetchAddress = async () => {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.lat}&lon=${userLocation.lng}&zoom=18&addressdetails=1`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setResolvedAddress(data.display_name || "Adresse inconnue");
+                }
+            } catch (e) {
+                setResolvedAddress("Emplacement GPS (Hors ligne)");
+            }
+        };
+        fetchAddress();
+    } else {
+        setResolvedAddress("Recherche GPS...");
+    }
+  }, [userLocation]);
+
   useEffect(() => {
     if (videoRef.current && cameraStream) {
       videoRef.current.srcObject = cameraStream;
     }
   }, [cameraStream, isCameraOpen]);
 
-  // Handle max duration for both audio and video
   useEffect(() => {
     if ((isRecording || isVideoRecording) && recordingTime >= MAX_RECORDING_TIME) {
       if (isRecording) stopRecording();
@@ -73,7 +91,6 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
   }, [recordingTime, isRecording, isVideoRecording]);
 
   const handleMediaSelect = (file: File) => {
-    // Reset Audio Player
     if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current = null;
@@ -81,7 +98,6 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
     setIsPlaying(false);
     setRecordingTime(0);
 
-    // Set new media
     setMedia(file);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     
@@ -97,7 +113,6 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
     if (file) handleMediaSelect(file);
   };
 
-  // --- AUDIO LOGIC ---
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -135,11 +150,9 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
     }
   };
   
-  // --- CAMERA LOGIC ---
   const startCamera = async () => {
     try {
       stopCamera();
-      // Request audio as well for video recording possibility
       const constraints = { 
         video: { facingMode: facingMode },
         audio: true 
@@ -149,14 +162,13 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
       try {
           stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (err) {
-          // Fallback video only if audio permission fails
           console.warn("Audio permission failed for camera, trying video only");
           stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
       }
 
       setCameraStream(stream);
       setIsCameraOpen(true);
-      setCameraMode('PHOTO'); // Default to photo
+      setCameraMode('PHOTO');
     } catch (err) {
       alert("Impossible d'accéder à la caméra.");
     }
@@ -245,7 +257,6 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
       }
   };
 
-  // --- GENERAL ---
   const deleteMedia = () => {
     setMedia(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -314,11 +325,9 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
   const renderCameraInterface = () => (
     <div className="fixed inset-0 bg-black z-[3000] flex flex-col">
       <div className="relative flex-1 bg-black overflow-hidden flex items-center justify-center">
-        {/* Added muted to prevent feedback loop when recording video with audio */}
         <video ref={videoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} />
         <canvas ref={canvasRef} className="hidden" />
         
-        {/* Timer Overlay for Video */}
         {isVideoRecording && (
             <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-red-600/80 px-4 py-1 rounded-full text-white font-mono font-bold animate-pulse">
                 {formatTime(recordingTime)}
@@ -331,7 +340,6 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
       </div>
       
       <div className="bg-black flex flex-col items-center pb-8 pt-4">
-         {/* Mode Switcher */}
          {!isVideoRecording && (
              <div className="flex space-x-6 mb-6 text-sm font-bold uppercase tracking-wider">
                  <button 
@@ -351,8 +359,6 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
 
          <div className="flex items-center justify-around w-full px-8">
             <div className="w-12"></div>
-            
-            {/* Trigger Button */}
             <button 
                 onClick={handleCameraTrigger} 
                 className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all ${
@@ -386,15 +392,17 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
 
       {/* Header */}
       <div className="bg-white px-5 pt-6 pb-4 shadow-sm z-10 border-b border-gray-100 flex items-center justify-between">
-         <div>
+         <div className="w-full">
             <h2 className="text-xl font-black text-gray-900 tracking-tight">{t('new_report')}</h2>
-            <div className="flex items-center text-xs font-medium text-blue-600 mt-1">
-              <MapPin className="w-3 h-3 mr-1" />
+            <div className="flex items-start text-xs font-medium text-blue-600 mt-1 max-w-[85%]">
+              <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
               {userLocation ? (
-                <span>
-                    {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
-                    {userLocation.accuracy && <span className="text-gray-400 ml-1"> (±{Math.round(userLocation.accuracy)}m)</span>}
-                </span>
+                <div className="flex flex-col">
+                    <span className="font-bold">{resolvedAddress}</span>
+                    <span className="text-gray-400 text-[10px]">
+                        {userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)} (±{Math.round(userLocation.accuracy || 0)}m)
+                    </span>
+                </div>
               ) : (
                  <span className="animate-pulse">{t('gps_pending')}</span>
               )}
@@ -519,7 +527,7 @@ export const IncidentForm: React.FC<IncidentFormProps> = ({ onSubmit, onCancel, 
         </div>
       </form>
 
-      {/* Footer Submit - With Safe Area Padding */}
+      {/* Footer Submit */}
       <div className="absolute bottom-0 left-0 right-0 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] bg-white border-t border-gray-100 z-20">
         <button
           onClick={handleSubmit}

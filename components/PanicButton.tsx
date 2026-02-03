@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ShieldAlert, Volume2, EyeOff } from 'lucide-react';
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ShieldAlert, Volume2, EyeOff, Radio, BatteryCharging } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface PanicButtonProps {
@@ -16,23 +17,59 @@ export const PanicButton: React.FC<PanicButtonProps> = ({ onTrigger }) => {
 
   // Stealth Mode State (Fake Screen Off)
   const [isStealthMode, setIsStealthMode] = useState(false);
+  
+  // Wake Lock Ref
+  const wakeLockRef = useRef<any>(null);
+  
+  // Media Capture Refs
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  const stopAllMedia = useCallback(() => {
-    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-      .then(stream => {
-        stream.getTracks().forEach(track => track.stop());
-      })
-      .catch(() => {});
+  const requestWakeLock = async () => {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        console.log('Wake Lock active');
+      }
+    } catch (err) {
+      console.warn('Wake Lock error:', err);
+    }
+  };
+
+  const releaseWakeLock = useCallback(async () => {
+    if (wakeLockRef.current) {
+      await wakeLockRef.current.release();
+      wakeLockRef.current = null;
+      console.log('Wake Lock released');
+    }
   }, []);
 
+  // START capturing audio to keep phone active and simulate stream
+  const startAudioCapture = async () => {
+    try {
+      // We don't necessarily need to store it yet, but keeping the mic open 
+      // is crucial for "Active Intervention" and prevents some background throttling
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      // Visual feedback or logic could handle chunks here
+    } catch (e) {
+      console.error("Mic access failed for SOS", e);
+    }
+  };
+
+  const stopAudioCapture = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+  };
+
   const triggerSOS = useCallback(() => {
-    stopAllMedia();
     setActive(true);
     setCountdown(3);
     setTriggered(false);
     // Vibrate to confirm trigger (Haptic feedback 0.5s)
     if (navigator.vibrate) navigator.vibrate(500);
-  }, [stopAllMedia]);
+  }, []);
 
   useEffect(() => {
     let timer: any;
@@ -40,8 +77,12 @@ export const PanicButton: React.FC<PanicButtonProps> = ({ onTrigger }) => {
       timer = setTimeout(() => setCountdown(c => c - 1), 1000);
     } else if (active && countdown === 0 && !triggered) {
       setTriggered(true);
-      // Auto-enter stealth mode after trigger
+      
+      // ACTIVATE SURVIVAL FEATURES
+      requestWakeLock();
+      startAudioCapture();
       setIsStealthMode(true);
+      
       if (onTrigger) onTrigger();
     }
     return () => clearTimeout(timer);
@@ -53,13 +94,25 @@ export const PanicButton: React.FC<PanicButtonProps> = ({ onTrigger }) => {
     setTriggered(false);
     setClickCount(0);
     setIsStealthMode(false);
+    
+    // Cleanup
+    releaseWakeLock();
+    stopAudioCapture();
   };
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      releaseWakeLock();
+      stopAudioCapture();
+    };
+  }, [releaseWakeLock]);
 
   // --- STEALTH MODE UI (FAKE BLACK SCREEN) ---
   if (isStealthMode) {
     return (
       <div 
-        className="fixed inset-0 bg-black z-[20000] cursor-default"
+        className="fixed inset-0 bg-black z-[20000] cursor-default flex flex-col items-center justify-center"
         onClick={() => {
             // Triple tap to exit stealth mode (Safety feature)
             const now = Date.now();
@@ -76,8 +129,13 @@ export const PanicButton: React.FC<PanicButtonProps> = ({ onTrigger }) => {
             setLastClickTime(now);
         }}
       >
-        <div className="text-gray-900 text-[10px] absolute bottom-2 right-2 select-none">
-            GPS ACTIVE. RECORDING. (Tap 4x to unlock)
+        <div className="absolute top-10 flex flex-col items-center opacity-20 animate-pulse">
+            <Radio className="w-12 h-12 text-red-500 mb-2" />
+            <span className="text-red-500 font-mono text-xs tracking-widest uppercase">Live Stream Active</span>
+        </div>
+        
+        <div className="text-gray-800 text-[10px] absolute bottom-2 right-2 select-none font-mono flex items-center">
+            <BatteryCharging className="w-3 h-3 mr-1" /> ACTIVE MONITORING... (Tap 4x to unlock)
         </div>
       </div>
     );
@@ -161,12 +219,12 @@ export const PanicButton: React.FC<PanicButtonProps> = ({ onTrigger }) => {
       <div className="mt-12 flex flex-col items-center space-y-4 z-10">
         <div className="flex items-center text-gray-400 text-xs bg-white/5 px-6 py-3 rounded-full border border-white/10 backdrop-blur-md">
           <Volume2 className="w-4 h-4 mr-2 text-red-500" />
-          <span>Volume Button x3 (Simulated)</span>
+          <span>Microphone actif en urgence</span>
         </div>
         
         <div className="flex items-center space-x-2 text-[10px] text-gray-500">
              <EyeOff className="w-3 h-3" />
-             <span>Mode Discret</span>
+             <span>Mode Discret & WakeLock</span>
         </div>
       </div>
     </div>

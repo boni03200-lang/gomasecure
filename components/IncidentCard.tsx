@@ -134,13 +134,18 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
                   {getStatusLabel(incident.status)}
                 </span>
               </div>
-              <div className="flex items-center mt-1 space-x-3 text-xs text-gray-400 font-medium">
-                 <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {formatDistanceToNow(incident.timestamp, { addSuffix: true, locale: fr })}</span>
-                 {distance !== undefined && (
-                   <span className={`flex items-center ${canVote ? 'text-green-600' : ''}`}>
-                     <MapPin className="w-3 h-3 mr-1" /> {distance < 1000 ? `${Math.round(distance)}m` : `${(distance/1000).toFixed(1)}km`}
-                   </span>
-                 )}
+              <div className="flex flex-col mt-1 space-y-0.5">
+                 <span className="flex items-center text-xs text-gray-400 font-medium">
+                    <Clock className="w-3 h-3 mr-1" /> {formatDistanceToNow(incident.timestamp, { addSuffix: true, locale: fr })}
+                 </span>
+                 <span className={`flex items-center text-xs font-medium ${canVote ? 'text-green-600' : 'text-gray-500'}`}>
+                     <MapPin className="w-3 h-3 mr-1" /> 
+                     {incident.address ? (
+                        <span className="truncate max-w-[200px]">{incident.address}</span>
+                     ) : (
+                        distance !== undefined ? (distance < 1000 ? `${Math.round(distance)}m` : `${(distance/1000).toFixed(1)}km`) : 'Localisation inconnue'
+                     )}
+                 </span>
               </div>
               {reportCount > 1 && (
                   <div className="flex items-center mt-1 text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded w-fit">

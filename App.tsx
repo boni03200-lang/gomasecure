@@ -63,6 +63,9 @@ const AppContent = () => {
   const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
+  
+  // Track active SOS session
+  const [activeSOSId, setActiveSOSId] = useState<string | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
       setToast({ message, type });
@@ -141,6 +144,38 @@ const AppContent = () => {
     };
   }, []);
 
+  // REAL-TIME LOCATION TRACKING FOR ACTIVE SOS
+  useEffect(() => {
+    let interval: any;
+    
+    if (activeSOSId && userLocation) {
+        // Force update location every 5 seconds if SOS is active
+        const updateLoc = () => {
+             db.updateIncidentLocation(activeSOSId, userLocation).catch(e => console.error("SOS Tracking Error", e));
+        };
+        
+        // Initial update
+        updateLoc();
+        
+        interval = setInterval(updateLoc, 5000);
+    }
+
+    return () => {
+        if (interval) clearInterval(interval);
+    };
+  }, [activeSOSId, userLocation]);
+
+  // Check if active SOS is resolved/rejected to stop tracking
+  useEffect(() => {
+      if (activeSOSId) {
+          const sosIncident = incidents.find(i => i.id === activeSOSId);
+          if (sosIncident && (sosIncident.status === IncidentStatus.RESOLU || sosIncident.status === IncidentStatus.REJETE)) {
+              setActiveSOSId(null);
+              showToast("SOS Clôturé - Suivi Arrêté", "info");
+          }
+      }
+  }, [incidents, activeSOSId]);
+
   useEffect(() => {
       const channel = supabase.channel('realtime_updates')
         .on(
@@ -216,16 +251,16 @@ const AppContent = () => {
   }, [user]);
 
   const handleCreateIncident = async (data: { type: IncidentType, description: string, media?: File }) => {
-    if (!user) return;
+    if (!user) return null;
     
     if (!userLocation) {
         showToast("Acquisition GPS en cours... Veuillez patienter.", "error");
-        return;
+        return null;
     }
 
     if (userLocation.accuracy && userLocation.accuracy > 100) {
         showToast(`Signal GPS trop faible (±${Math.round(userLocation.accuracy)}m). Déplacez-vous à ciel ouvert.`, 'error');
-        return;
+        return null;
     }
 
     setIsSubmitting(true);
@@ -279,11 +314,13 @@ const AppContent = () => {
       setIsSubmitting(false);
       setActiveTab('LIST');
       showToast('Incident signalé avec succès', 'success');
+      return resultIncident;
     } catch (e: any) {
       if (!isAbortError(e)) {
           showToast("Erreur lors de l'envoi", 'error');
       }
       setIsSubmitting(false);
+      return null;
     }
   };
 
@@ -317,10 +354,15 @@ const AppContent = () => {
         showToast("GPS requis pour SOS", "error");
         return;
     }
-    await handleCreateIncident({
+    const incident = await handleCreateIncident({
         type: IncidentType.SOS,
         description: SOS_MESSAGE_TEMPLATE
     });
+
+    if (incident) {
+        setActiveSOSId(incident.id);
+        showToast("SOS ACTIVÉ - TRACAGE EN TEMPS RÉEL ACTIF", "error");
+    }
   };
 
   const renderContent = () => {
