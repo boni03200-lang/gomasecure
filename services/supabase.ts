@@ -69,28 +69,41 @@ import { GOMA_CENTER } from '../constants';
 */
 
 // --- ENVIRONMENT CONFIG ---
-// Safe access to environment variables
-const getEnv = () => {
+const getEnvVar = (key: string) => {
   try {
     // @ts-ignore
-    return import.meta.env || {};
-  } catch (e) {
-    return {};
-  }
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+      // @ts-ignore
+      return import.meta.env[key];
+    }
+  } catch (e) {}
+  
+  try {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      // @ts-ignore
+      return process.env[key];
+    }
+  } catch (e) {}
+  
+  return '';
 };
 
-const env = getEnv();
-// @ts-ignore
-const supabaseUrl = env.VITE_SUPABASE_URL;
-// @ts-ignore
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
+const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn("CRITICAL: Supabase Environment Variables are missing! Please check Vercel settings.");
+const isValidConfig = supabaseUrl && supabaseAnonKey;
+if (!isValidConfig) {
+  console.warn("⚠️ Supabase Credentials missing or invalid. App is running in fallback mode.");
+  console.warn("Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file or Vercel project settings.");
 }
 
 // Export the real client
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+// We provide a fallback URL/Key to prevent 'supabaseUrl is required' crash during initialization if env vars are missing.
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder-project.supabase.co', 
+  supabaseAnonKey || 'placeholder-key'
+);
 
 // --- UTILS ---
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -156,6 +169,7 @@ class SupabaseService implements DatabaseService {
 
   // --- HELPER: LOGGING ---
   private async logActivity(userId: string, action: ActivityAction, details: string, targetId?: string) {
+      if (!isValidConfig) return; // Skip if no config
       try {
           await supabase.from('activity_logs').insert({
               user_id: userId,
@@ -171,6 +185,7 @@ class SupabaseService implements DatabaseService {
 
   // --- AUTH ---
   async login(email: string, password?: string): Promise<User> {
+    if (!isValidConfig) throw new Error("Service indisponible (Configuration manquante)");
     if (!password) throw new Error("Mot de passe requis");
     
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
@@ -190,6 +205,7 @@ class SupabaseService implements DatabaseService {
   }
 
   async register(email: string, password: string, name: string, phone: string): Promise<User> {
+    if (!isValidConfig) throw new Error("Service indisponible (Configuration manquante)");
     const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
     if (authError) throw authError;
     if (!authData.user) throw new Error("Erreur création auth");
@@ -224,21 +240,25 @@ class SupabaseService implements DatabaseService {
   }
 
   async getAllUsers(): Promise<User[]> {
+      if (!isValidConfig) return [];
       const { data } = await supabase.from('users').select('*');
       return (data || []).map(this.mapUser);
   }
 
   async updateUserRole(uid: string, role: UserRole): Promise<void> {
+      if (!isValidConfig) return;
       await supabase.from('users').update({ role }).eq('uid', uid);
       await this.logActivity(uid, 'PROFILE_UPDATE', `Role: ${role}`);
   }
 
   async updateUserStatus(uid: string, status: UserStatus): Promise<void> {
+      if (!isValidConfig) return;
       await supabase.from('users').update({ status }).eq('uid', uid);
       await this.logActivity(uid, 'PROFILE_UPDATE', `Statut: ${status}`);
   }
 
   async getUserActivity(uid: string): Promise<ActivityLog[]> {
+      if (!isValidConfig) return [];
       const { data } = await supabase.from('activity_logs')
         .select('*')
         .eq('user_id', uid)
@@ -256,11 +276,13 @@ class SupabaseService implements DatabaseService {
 
   // --- INCIDENTS ---
   async getIncidents(): Promise<Incident[]> {
+      if (!isValidConfig) return [];
       const { data } = await supabase.from('incidents').select('*').order('timestamp', { ascending: false });
       return (data || []).map(this.mapIncident);
   }
 
   async createIncident(incidentData: Partial<Incident>, user: User): Promise<Incident> {
+      if (!isValidConfig) throw new Error("Service indisponible");
       const MERGE_RADIUS = 50; // meters
       const location = incidentData.location || GOMA_CENTER;
       const type = incidentData.type || IncidentType.AUTRE;
@@ -369,6 +391,7 @@ class SupabaseService implements DatabaseService {
   }
 
   async voteIncident(incidentId: string, userId: string, voteType: 'like' | 'dislike'): Promise<Incident> {
+      if (!isValidConfig) throw new Error("Service indisponible");
       // 1. Fetch current
       const { data: current } = await supabase.from('incidents').select('*').eq('id', incidentId).single();
       if (!current) throw new Error("Incident not found");
@@ -410,6 +433,7 @@ class SupabaseService implements DatabaseService {
   }
 
   async updateIncidentStatus(incidentId: string, status: IncidentStatus, validatorId?: string): Promise<Incident> {
+      if (!isValidConfig) throw new Error("Service indisponible");
       const { data: updated, error } = await supabase
         .from('incidents')
         .update({ status, validated_by: validatorId })
@@ -426,6 +450,7 @@ class SupabaseService implements DatabaseService {
   }
 
   async updateIncidentLocation(incidentId: string, location: { lat: number; lng: number }): Promise<void> {
+      if (!isValidConfig) return;
       await supabase
         .from('incidents')
         .update({ location, timestamp: Date.now() }) // Also update timestamp to bubble up in feed
@@ -434,6 +459,7 @@ class SupabaseService implements DatabaseService {
 
   // --- NOTIFICATIONS ---
   async getNotifications(userId: string): Promise<Notification[]> {
+      if (!isValidConfig) return [];
       const { data } = await supabase
         .from('notifications')
         .select('*')
@@ -445,10 +471,12 @@ class SupabaseService implements DatabaseService {
   }
 
   async markNotificationRead(notifId: string): Promise<void> {
+      if (!isValidConfig) return;
       await supabase.from('notifications').update({ read: true }).eq('id', notifId);
   }
 
   private async createNotification(data: Partial<Notification>) {
+      if (!isValidConfig) return;
       await supabase.from('notifications').insert({
           user_id: data.userId || 'ALL',
           title: data.title || 'Info',
@@ -462,6 +490,7 @@ class SupabaseService implements DatabaseService {
 
   // --- STORAGE ---
   async uploadMedia(file: File): Promise<string | null> {
+      if (!isValidConfig) return null;
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
       const filePath = `${fileName}`;
