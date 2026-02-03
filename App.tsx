@@ -33,7 +33,8 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
 };
 
 const isAbortError = (e: any) => {
-    const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : '');
+    if (!e) return false;
+    const msg = (e instanceof Error ? e.message : (typeof e === 'string' ? e : '')).toLowerCase();
     return e?.name === 'AbortError' || msg.includes('aborted') || msg.includes('signal is aborted');
 };
 

@@ -99,7 +99,6 @@ if (!isValidConfig) {
 }
 
 // Export the real client
-// We provide a fallback URL/Key to prevent 'supabaseUrl is required' crash during initialization if env vars are missing.
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder-project.supabase.co', 
   supabaseAnonKey || 'placeholder-key'
@@ -183,6 +182,64 @@ class SupabaseService implements DatabaseService {
       }
   }
 
+  // --- HELPER: REPUTATION SYSTEM ---
+  private async updateUserReputation(userId: string, points: number, reason: string) {
+      if (!isValidConfig || !userId) return;
+
+      try {
+          // 1. Get current score
+          const { data: user, error } = await supabase.from('users').select('reputation_score').eq('uid', userId).single();
+          if (error || !user) return;
+
+          // 2. Calculate new score (Bounded 0 - 100)
+          const currentScore = user.reputation_score || 50;
+          const newScore = Math.max(0, Math.min(100, currentScore + points));
+
+          if (newScore === currentScore) return;
+
+          // 3. Update
+          await supabase.from('users').update({ reputation_score: newScore }).eq('uid', userId);
+
+          // 4. Log
+          await this.logActivity(userId, 'PROFILE_UPDATE', `Réputation ${points > 0 ? '+' : ''}${points}: ${reason}`);
+
+          // 5. Notify User
+          await this.createNotification({
+              userId,
+              type: points > 0 ? NotificationType.INFO : NotificationType.ALERT,
+              title: "Mise à jour Réputation",
+              message: `Votre score de fiabilité a ${points > 0 ? 'augmenté' : 'diminué'} de ${Math.abs(points)} points. Motif: ${reason}`
+          });
+
+      } catch (e) {
+          console.error("Failed to update reputation", e);
+      }
+  }
+
+  // --- HELPER: VOTER REPUTATION BATCHING ---
+  private async processVoterReputation(likes: string[], dislikes: string[], status: IncidentStatus) {
+      if (!isValidConfig) return;
+      
+      const distinctLikes = [...new Set(likes)];
+      const distinctDislikes = [...new Set(dislikes)];
+
+      // Logic: Reward interaction that aligns with the final outcome
+      if (status === IncidentStatus.VALIDE) {
+          // Validated: Likers were right (+2), Dislikers were wrong (-2)
+          await Promise.all([
+              ...distinctLikes.map(uid => this.updateUserReputation(uid, 2, "Confirmation validée (Bon jugement)")),
+              ...distinctDislikes.map(uid => this.updateUserReputation(uid, -2, "Démenti incorrect (Erreur de jugement)"))
+          ]);
+      } else if (status === IncidentStatus.REJETE) {
+          // Rejected: Likers were wrong (-5), Dislikers were right (+5)
+          // Penalty is higher for supporting fake news
+          await Promise.all([
+              ...distinctLikes.map(uid => this.updateUserReputation(uid, -5, "Soutien à une fausse information")),
+              ...distinctDislikes.map(uid => this.updateUserReputation(uid, 5, "Vigilance confirmée (Fake news repérée)"))
+          ]);
+      }
+  }
+
   // --- AUTH ---
   async login(email: string, password?: string): Promise<User> {
     if (!isValidConfig) throw new Error("Service indisponible (Configuration manquante)");
@@ -221,7 +278,6 @@ class SupabaseService implements DatabaseService {
         joinedAt: Date.now()
     };
 
-    // Convert camelCase to snake_case for DB
     const { error: dbError } = await supabase.from('users').insert({
         uid: newUser.uid,
         display_name: newUser.displayName,
@@ -283,15 +339,13 @@ class SupabaseService implements DatabaseService {
 
   async createIncident(incidentData: Partial<Incident>, user: User): Promise<Incident> {
       if (!isValidConfig) throw new Error("Service indisponible");
-      const MERGE_RADIUS = 50; // meters
+      const MERGE_RADIUS = 50; 
       const location = incidentData.location || GOMA_CENTER;
       const type = incidentData.type || IncidentType.AUTRE;
       
-      // Reverse Geocode
       const address = await reverseGeocode(location.lat, location.lng);
 
-      // 1. Check for Merge Candidates (Client-side logic for simplicity, ideal is PostGIS)
-      // Fetch active incidents of same type
+      // Merge Logic (unchanged)
       const { data: candidates } = await supabase
           .from('incidents')
           .select('*')
@@ -311,7 +365,6 @@ class SupabaseService implements DatabaseService {
       }
 
       if (mergeTarget) {
-          // Perform Merge Update
           const currentReporters = mergeTarget.reporters || [mergeTarget.reporter_id];
           if (!currentReporters.includes(user.uid)) {
               const updatedReporters = [...currentReporters, user.uid];
@@ -324,7 +377,7 @@ class SupabaseService implements DatabaseService {
                     report_count: newCount,
                     reporters: updatedReporters,
                     reliability_score: newScore,
-                    timestamp: Date.now() // Bump to top
+                    timestamp: Date.now() 
                 })
                 .eq('id', mergeTarget.id)
                 .select()
@@ -332,7 +385,6 @@ class SupabaseService implements DatabaseService {
               
               if (!error && updated) {
                   await this.logActivity(user.uid, 'REPORT', `Signalement fusionné: ${type}`, updated.id);
-                  // Notify user
                   await this.createNotification({
                       userId: user.uid,
                       title: "Signalement Fusionné",
@@ -346,14 +398,13 @@ class SupabaseService implements DatabaseService {
           return this.mapIncident(mergeTarget);
       }
 
-      // 2. Create New Incident
       const isSentinel = user.role === UserRole.SENTINELLE;
       const initialStatus = isSentinel ? IncidentStatus.VALIDE : IncidentStatus.EN_ATTENTE;
       
       const newIncident = {
           type,
           description: incidentData.description,
-          location: location, // Jsonb
+          location: location, 
           address,
           timestamp: Date.now(),
           reporter_id: user.uid,
@@ -361,7 +412,7 @@ class SupabaseService implements DatabaseService {
           validated_by: isSentinel ? user.uid : null,
           likes: [],
           dislikes: [],
-          reliability_score: user.reputationScore,
+          reliability_score: user.reputationScore, // INIT FROM CITIZEN REPUTATION
           media_url: incidentData.mediaUrl,
           media_type: incidentData.mediaType || 'image',
           report_count: 1,
@@ -378,7 +429,6 @@ class SupabaseService implements DatabaseService {
       const action = type === IncidentType.SOS ? 'SOS' : 'REPORT';
       await this.logActivity(user.uid, action, `Nouveau: ${type} à ${address}`, created.id);
 
-      // Broadcast Notification
       await this.createNotification({
           userId: 'ALL',
           title: isSentinel ? "Alerte Sentinelle" : "Nouvel Incident",
@@ -386,13 +436,17 @@ class SupabaseService implements DatabaseService {
           type: isSentinel ? NotificationType.ALERT : NotificationType.ACTION,
           relatedIncidentId: created.id
       });
+      
+      // If sentinel created it, immediate reward
+      if (isSentinel) {
+          await this.updateUserReputation(user.uid, 5, "Signalement Sentinelle Validé");
+      }
 
       return this.mapIncident(created);
   }
 
   async voteIncident(incidentId: string, userId: string, voteType: 'like' | 'dislike'): Promise<Incident> {
       if (!isValidConfig) throw new Error("Service indisponible");
-      // 1. Fetch current
       const { data: current } = await supabase.from('incidents').select('*').eq('id', incidentId).single();
       if (!current) throw new Error("Incident not found");
 
@@ -400,7 +454,6 @@ class SupabaseService implements DatabaseService {
       let dislikes = current.dislikes || [];
       let score = current.reliability_score;
 
-      // Remove existing votes
       likes = likes.filter((id: string) => id !== userId);
       dislikes = dislikes.filter((id: string) => id !== userId);
 
@@ -412,12 +465,15 @@ class SupabaseService implements DatabaseService {
           score = Math.max(0, score - 15);
       }
 
-      // Auto-validate logic
       let status = current.status;
       let validatedBy = current.validated_by;
+      let justAutoValidated = false;
+
+      // 3 Votes Auto-Validate
       if (likes.length >= 3 && status === IncidentStatus.EN_ATTENTE) {
           status = IncidentStatus.VALIDE;
-          validatedBy = null; // System validated
+          validatedBy = null;
+          justAutoValidated = true;
       }
 
       const { data: updated, error } = await supabase
@@ -429,11 +485,23 @@ class SupabaseService implements DatabaseService {
       
       if (error) throw error;
       await this.logActivity(userId, 'VOTE', `Vote ${voteType}`, incidentId);
+
+      // Reward on Auto-Validation
+      if (justAutoValidated) {
+          // Reward Reporter
+          await this.updateUserReputation(current.reporter_id, 5, "Validation par la communauté");
+          // Reward ALL Voters
+          await this.processVoterReputation(likes, dislikes, IncidentStatus.VALIDE);
+      }
+
       return this.mapIncident(updated);
   }
 
   async updateIncidentStatus(incidentId: string, status: IncidentStatus, validatorId?: string): Promise<Incident> {
       if (!isValidConfig) throw new Error("Service indisponible");
+      
+      const { data: current } = await supabase.from('incidents').select('reporter_id, status, likes, dislikes').eq('id', incidentId).single();
+      
       const { data: updated, error } = await supabase
         .from('incidents')
         .update({ status, validated_by: validatorId })
@@ -446,6 +514,24 @@ class SupabaseService implements DatabaseService {
       if (validatorId) {
           await this.logActivity(validatorId, 'VALIDATE', `Statut: ${status}`, incidentId);
       }
+
+      // REPUTATION IMPACT LOGIC
+      if (current && current.status !== status) {
+          // 1. Reporter Impact
+          const reporterId = current.reporter_id;
+          if (reporterId) {
+              if (status === IncidentStatus.VALIDE) await this.updateUserReputation(reporterId, 5, "Incident Validé");
+              else if (status === IncidentStatus.RESOLU) await this.updateUserReputation(reporterId, 10, "Incident Résolu (Information Utile)");
+              else if (status === IncidentStatus.REJETE) await this.updateUserReputation(reporterId, -15, "Signalement Rejeté/Faux");
+          }
+
+          // 2. Voter Interaction Impact
+          // Only process interaction reputation if status changes to definitive state (VALID or REJECTED)
+          if (status === IncidentStatus.VALIDE || status === IncidentStatus.REJETE) {
+              await this.processVoterReputation(current.likes || [], current.dislikes || [], status);
+          }
+      }
+
       return this.mapIncident(updated);
   }
 
@@ -453,7 +539,7 @@ class SupabaseService implements DatabaseService {
       if (!isValidConfig) return;
       await supabase
         .from('incidents')
-        .update({ location, timestamp: Date.now() }) // Also update timestamp to bubble up in feed
+        .update({ location, timestamp: Date.now() }) 
         .eq('id', incidentId);
   }
 
@@ -541,7 +627,7 @@ class SupabaseService implements DatabaseService {
           id: row.id,
           type: row.type as IncidentType,
           description: row.description,
-          location: row.location, // Already JSON
+          location: row.location, 
           address: row.address,
           timestamp: row.timestamp,
           reporterId: row.reporter_id,
