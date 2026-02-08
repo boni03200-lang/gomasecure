@@ -28,3 +28,30 @@ export const INCIDENT_VISIBILITY_RADIUS: Record<IncidentType, number> = {
 // If user is within this radius of these types, show SAFETY WARNING
 export const DANGEROUS_INCIDENTS = [IncidentType.INCENDIE, IncidentType.AGRESSION, IncidentType.SOS, IncidentType.ACCIDENT];
 export const DANGER_RADIUS = 100; // meters
+
+// --- QUARTIERS DE GOMA (OFFICIEL: 18) ---
+// Répartition par Commune pour l'optimisation UI
+export const GOMA_COMMUNES = {
+  "Commune de Goma": [
+    "Himbi",
+    "Katindo",
+    "Kyeshero",
+    "Lac Vert",
+    "Les Volcans",
+    "Mapendo",
+    "Mikeno"
+  ],
+  "Commune de Karisimbi": [
+    "Bujovu",
+    "Kahembe",
+    "Kasika",
+    "Katoyi",
+    "Mabanga-Nord",
+    "Mabanga-Sud",
+    "Majengo",
+    "Mugunga",
+    "Murara",
+    "Ndosho",
+    "Virunga"
+  ]
+};

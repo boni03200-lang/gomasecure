@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow, format, subDays, startOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { shouldSuppressError } from '../utils/error';
 
 declare global {
   interface Window {
@@ -33,12 +34,6 @@ const COLORS = {
   catGreen: '#22c55e',
   catBlue: '#3b82f6',
   catOrange: '#f97316',
-};
-
-// Helper to ignore abort errors
-const isAbortError = (e: any) => {
-    const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : '');
-    return e?.name === 'AbortError' || msg.includes('aborted') || msg.includes('signal is aborted');
 };
 
 // --- CHARTS SUB-COMPONENTS ---
@@ -176,7 +171,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const u = await db.getAllUsers();
       setUsers(u);
     } catch (e) { 
-        if (!isAbortError(e)) console.error(e); 
+        if (!shouldSuppressError(e)) console.error(e); 
     }
   };
 

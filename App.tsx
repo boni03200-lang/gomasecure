@@ -14,6 +14,7 @@ import { db, supabase } from './services/supabase';
 import { User, Incident, TabView, UserRole, IncidentType, IncidentStatus, Notification } from './types';
 import { GOMA_CENTER, SOS_MESSAGE_TEMPLATE, INCIDENT_VISIBILITY_RADIUS } from './constants';
 import { CheckCircle, AlertCircle, X, Info } from 'lucide-react';
+import { shouldSuppressError } from './utils/error';
 
 const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error' | 'info', onClose: () => void }) => {
   useEffect(() => {
@@ -30,12 +31,6 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
       <span className="font-bold text-sm">{message}</span>
     </div>
   );
-};
-
-const isAbortError = (e: any) => {
-    if (!e) return false;
-    const msg = (e instanceof Error ? e.message : (typeof e === 'string' ? e : '')).toLowerCase();
-    return e?.name === 'AbortError' || msg.includes('aborted') || msg.includes('signal is aborted');
 };
 
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -64,6 +59,7 @@ const AppContent = () => {
   const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   
   // Track active SOS session
   const [activeSOSId, setActiveSOSId] = useState<string | null>(null);
@@ -71,6 +67,42 @@ const AppContent = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
       setToast({ message, type });
   };
+
+  // --- SESSION & AUTH ---
+  useEffect(() => {
+    // 1. Initial Session Check (e.g. refresh, or redirect from email link)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user && !user) {
+            db.getUserProfile(session.user.id)
+              .then(u => setUser(u))
+              .catch(() => { /* Silent fail, AuthView will handle login */ });
+        }
+    });
+
+    // 2. Auth State Listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+            setIsPasswordRecovery(true);
+        }
+
+        if (event === 'SIGNED_IN' && session?.user && !user) {
+            // Fetch profile if user not already set
+            try {
+                const profile = await db.getUserProfile(session.user.id);
+                setUser(profile);
+            } catch (e) { console.error("Profile load error", e); }
+        }
+
+        if (event === 'SIGNED_OUT') {
+            setUser(null);
+            setIsPasswordRecovery(false);
+        }
+    });
+
+    return () => {
+        subscription.unsubscribe();
+    };
+  }, [user]); // user dep allows us to skip fetch if already set
 
   // --- DATA FILTERING LOGIC ---
   const publicIncidents = useMemo(() => {
@@ -109,7 +141,7 @@ const AppContent = () => {
         const usrs = await db.getAllUsers();
         setUsers(usrs);
       } catch (e: any) {
-        if (!isAbortError(e)) {
+        if (!shouldSuppressError(e)) {
            console.error("Error loading initial data", e);
         }
       }
@@ -227,7 +259,7 @@ const AppContent = () => {
                   setNotifications(notifs.sort((a, b) => b.timestamp - a.timestamp));
               }
           } catch (error: any) {
-              if (!isAbortError(error)) {
+              if (!shouldSuppressError(error)) {
                   console.error("Notification polling error:", error);
               }
           }
@@ -317,7 +349,7 @@ const AppContent = () => {
       showToast('Incident signalé avec succès', 'success');
       return resultIncident;
     } catch (e: any) {
-      if (!isAbortError(e)) {
+      if (!shouldSuppressError(e)) {
           showToast("Erreur lors de l'envoi", 'error');
       }
       setIsSubmitting(false);
@@ -344,7 +376,7 @@ const AppContent = () => {
       setIncidents(prev => prev.map(i => i.id === id ? updated : i));
       showToast('Vote enregistré', 'success');
     } catch (e: any) {
-      if (!isAbortError(e)) {
+      if (!shouldSuppressError(e)) {
           showToast('Erreur lors du vote', 'error');
       }
     }
@@ -367,8 +399,16 @@ const AppContent = () => {
   };
 
   const renderContent = () => {
-    if (!user) {
-        return <AuthView onLogin={setUser} showToast={showToast} />;
+    // Force AuthView if not logged in OR if in recovery mode
+    if (!user || isPasswordRecovery) {
+        return (
+            <AuthView 
+                onLogin={setUser} 
+                showToast={showToast} 
+                isPasswordRecovery={isPasswordRecovery}
+                onPasswordResetSuccess={() => setIsPasswordRecovery(false)}
+            />
+        );
     }
 
     if (user.role === UserRole.ADMINISTRATEUR) {
@@ -376,7 +416,10 @@ const AppContent = () => {
             <AdminDashboard 
                 user={user} 
                 incidents={incidents} 
-                onLogout={() => setUser(null)} 
+                onLogout={() => {
+                    supabase.auth.signOut();
+                    setUser(null);
+                }} 
                 onUpdateStatus={async (id, status) => {
                     await db.updateIncidentStatus(id, status, user.uid);
                     showToast('Statut mis à jour', 'success');
@@ -453,7 +496,10 @@ const AppContent = () => {
              <UserProfile 
                 user={user} 
                 incidents={incidents} 
-                onLogout={() => setUser(null)}
+                onLogout={() => {
+                    supabase.auth.signOut();
+                    setUser(null);
+                }}
                 onLanguageChange={() => setLanguage(language === 'fr' ? 'sw' : 'fr')}
                 onToggleNotifications={() => {}}
              />
