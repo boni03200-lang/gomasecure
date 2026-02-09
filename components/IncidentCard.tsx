@@ -241,7 +241,7 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({
                 <div className="text-center py-2 bg-gray-50 rounded-lg border border-gray-100">
                     <span className="text-xs text-gray-400 font-medium italic flex items-center justify-center">
                         <MapPin className="w-3 h-3 mr-1" />
-                        {t('too_far')} (&gt; {visibilityRadius}m)
+                        {t('too_far')} ({'>'} {visibilityRadius}m)
                     </span>
                 </div>
              ) : (
